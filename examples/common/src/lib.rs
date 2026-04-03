@@ -5,10 +5,13 @@ use bevy::{
 };
 use bevy_enhanced_input::context::InputContextAppExt;
 use bevy_enhanced_input::prelude::{
-    Action, Axial, Bidirectional, Binding, Bindings, Cancel as InputCancel, Cardinal, Complete,
-    EnhancedInputPlugin, Fire, InputAction, Press, Scale, Start, actions, bindings,
+    actions, bindings, Action, Axial, Bidirectional, Binding, Bindings, Cancel as InputCancel,
+    Cardinal, Complete, EnhancedInputPlugin, Fire, InputAction, Press, Scale, Start,
 };
-use saddle_camera_fps_camera::{FpsCamera, FpsCameraConfig, FpsCameraIntent, FpsCameraRuntime, FpsCameraSystems};
+use saddle_camera_fps_camera::{
+    DecayConfig, FpsCamera, FpsCameraConfig, FpsCameraIntent, FpsCameraRuntime, FpsCameraSystems,
+};
+use saddle_pane::prelude::*;
 
 #[derive(Component)]
 pub struct ExampleOverlay;
@@ -16,6 +19,52 @@ pub struct ExampleOverlay;
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ExampleSystems {
     Overlay,
+}
+
+#[derive(Resource, Pane)]
+#[pane(title = "FPS Camera", position = "top-right")]
+pub struct FpsCameraPane {
+    #[pane(tab = "Camera", slider, min = 0.0005, max = 0.01, step = 0.0001)]
+    pub sensitivity_x: f32,
+    #[pane(tab = "Camera", slider, min = 0.0005, max = 0.01, step = 0.0001)]
+    pub sensitivity_y: f32,
+    #[pane(tab = "Camera", slider, min = 50.0, max = 110.0, step = 1.0)]
+    pub base_fov_degrees: f32,
+    #[pane(tab = "Camera", slider, min = 0.0, max = 10.0, step = 0.25)]
+    pub sprint_boost_degrees: f32,
+    #[pane(tab = "Motion", slider, min = 0.0, max = 1.0, step = 0.05)]
+    pub bob_weight: f32,
+    #[pane(tab = "Motion", slider, min = 0.0, max = 1.0, step = 0.05)]
+    pub shake_weight: f32,
+    #[pane(tab = "Motion")]
+    pub viewmodel_enabled: bool,
+    #[pane(tab = "Motion", slider, min = 4.0, max = 30.0, step = 0.5)]
+    pub viewmodel_response: f32,
+    #[pane(tab = "Runtime", monitor)]
+    pub speed: f32,
+    #[pane(tab = "Runtime", monitor)]
+    pub visual_fov_degrees: f32,
+    #[pane(tab = "Runtime", monitor)]
+    pub trauma: f32,
+}
+
+impl Default for FpsCameraPane {
+    fn default() -> Self {
+        let config = FpsCameraConfig::default();
+        Self {
+            sensitivity_x: config.look.sensitivity.x,
+            sensitivity_y: config.look.sensitivity.y,
+            base_fov_degrees: config.fov.base_fov.to_degrees(),
+            sprint_boost_degrees: config.fov.sprint_boost.to_degrees(),
+            bob_weight: config.comfort.bob_weight,
+            shake_weight: config.comfort.shake_weight,
+            viewmodel_enabled: config.viewmodel.enabled,
+            viewmodel_response: config.viewmodel.response.decay_rate,
+            speed: 0.0,
+            visual_fov_degrees: config.fov.base_fov.to_degrees(),
+            trauma: 0.0,
+        }
+    }
 }
 
 #[derive(Debug, InputAction)]
@@ -99,6 +148,28 @@ impl Plugin for ExampleCameraControlsPlugin {
                 ),
             );
     }
+}
+
+pub fn pane_plugins() -> (
+    bevy_flair::FlairPlugin,
+    bevy_input_focus::InputDispatchPlugin,
+    bevy_ui_widgets::UiWidgetsPlugins,
+    bevy_input_focus::tab_navigation::TabNavigationPlugin,
+    saddle_pane::PanePlugin,
+) {
+    (
+        bevy_flair::FlairPlugin,
+        bevy_input_focus::InputDispatchPlugin,
+        bevy_ui_widgets::UiWidgetsPlugins,
+        bevy_input_focus::tab_navigation::TabNavigationPlugin,
+        saddle_pane::PanePlugin,
+    )
+}
+
+pub fn add_debug_pane(app: &mut App) {
+    app.add_plugins(pane_plugins())
+        .register_pane::<FpsCameraPane>()
+        .add_systems(Update, sync_pane_to_camera.in_set(ExampleSystems::Overlay));
 }
 
 pub fn spawn_reference_world(
@@ -262,6 +333,43 @@ pub fn spawn_fps_camera(
             ]),
         ))
         .id()
+}
+
+fn sync_pane_to_camera(
+    mut pane: ResMut<FpsCameraPane>,
+    mut cameras: Query<(&mut FpsCameraConfig, &FpsCameraRuntime), With<FpsCamera>>,
+) {
+    let Some((mut config, runtime)) = cameras.iter_mut().next() else {
+        return;
+    };
+    let pane_added = pane.is_added();
+
+    if pane_added {
+        let pane = pane.bypass_change_detection();
+        pane.sensitivity_x = config.look.sensitivity.x;
+        pane.sensitivity_y = config.look.sensitivity.y;
+        pane.base_fov_degrees = config.fov.base_fov.to_degrees();
+        pane.sprint_boost_degrees = config.fov.sprint_boost.to_degrees();
+        pane.bob_weight = config.comfort.bob_weight;
+        pane.shake_weight = config.comfort.shake_weight;
+        pane.viewmodel_enabled = config.viewmodel.enabled;
+        pane.viewmodel_response = config.viewmodel.response.decay_rate;
+    }
+
+    if pane.is_changed() && !pane_added {
+        config.look.sensitivity = Vec2::new(pane.sensitivity_x, pane.sensitivity_y);
+        config.fov.base_fov = pane.base_fov_degrees.to_radians();
+        config.fov.sprint_boost = pane.sprint_boost_degrees.to_radians();
+        config.comfort.bob_weight = pane.bob_weight;
+        config.comfort.shake_weight = pane.shake_weight;
+        config.viewmodel.enabled = pane.viewmodel_enabled;
+        config.viewmodel.response = DecayConfig::new(pane.viewmodel_response.max(0.0));
+    }
+
+    let pane = pane.bypass_change_detection();
+    pane.speed = runtime.speed;
+    pane.visual_fov_degrees = runtime.visual_fov.to_degrees();
+    pane.trauma = runtime.trauma;
 }
 
 fn cache_move_axis(

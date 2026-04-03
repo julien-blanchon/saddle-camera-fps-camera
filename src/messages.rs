@@ -18,6 +18,7 @@ pub struct LandedEvent {
 pub struct CameraShakeRequest {
     pub entity: Entity,
     pub trauma: f32,
+    pub duration_override: Option<f32>,
 }
 
 #[derive(Message, Debug, Clone, Copy)]
@@ -25,4 +26,5 @@ pub struct CameraRecoilRequest {
     pub entity: Entity,
     pub pitch: f32,
     pub yaw: f32,
+    pub duration_override: Option<f32>,
 }

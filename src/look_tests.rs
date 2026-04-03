@@ -1,9 +1,9 @@
 use bevy::prelude::*;
 
 use crate::{
+    input::{apply_look, resolve_look_delta, wrap_angle},
     AimConfig, AnalogLookConfig, DecayConfig, FpsCameraConfig, FreeLookConfig, LookConfig,
     MovementConfig,
-    input::{apply_look, resolve_look_delta, wrap_angle},
 };
 
 fn config() -> FpsCameraConfig {

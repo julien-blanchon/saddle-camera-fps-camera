@@ -1,16 +1,16 @@
 [package]
-name = "saddle-camera-fps-camera-example-common"
+name = "saddle-camera-fps-camera-example-external-motion"
 version = "0.1.0"
 edition = "2024"
 publish = false
 
 [dependencies]
+avian3d = { workspace = true }
 bevy = { workspace = true }
-bevy_flair = { workspace = true }
 bevy_enhanced_input = { workspace = true }
-bevy_input_focus = { workspace = true }
-bevy_ui_widgets = { workspace = true }
 saddle-camera-fps-camera = { workspace = true }
+saddle-camera-fps-camera-example-common = { path = "../common" }
+saddle-character-controller = { workspace = true }
 saddle-pane = { workspace = true }
 
 [lints]

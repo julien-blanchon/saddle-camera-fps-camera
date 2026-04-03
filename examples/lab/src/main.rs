@@ -5,7 +5,7 @@ mod e2e;
 use bevy::{
     input::common_conditions::input_just_pressed,
     prelude::*,
-    remote::{RemotePlugin, http::RemoteHttpPlugin},
+    remote::{http::RemoteHttpPlugin, RemotePlugin},
 };
 #[cfg(feature = "brp")]
 use bevy_brp_extras::BrpExtrasPlugin;
@@ -36,6 +36,7 @@ fn main() {
         common::ExampleCameraControlsPlugin,
         RemotePlugin::default(),
     ));
+    common::add_debug_pane(&mut app);
     #[cfg(feature = "brp")]
     app.add_plugins(BrpExtrasPlugin::with_http_plugin(
         RemoteHttpPlugin::default(),
@@ -109,6 +110,7 @@ fn trigger_recoil(
         entity: *camera,
         pitch: 7.0_f32.to_radians(),
         yaw: 2.0_f32.to_radians(),
+        duration_override: None,
     });
 }
 
@@ -119,5 +121,6 @@ fn trigger_shake(
     shake_writer.write(CameraShakeRequest {
         entity: *camera,
         trauma: 0.7,
+        duration_override: None,
     });
 }

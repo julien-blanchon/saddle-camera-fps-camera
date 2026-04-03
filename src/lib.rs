@@ -13,11 +13,11 @@ pub use components::{
 pub use config::{
     AimConfig, AnalogLookConfig, ComfortConfig, CrouchConfig, FovConfig, FpsCameraConfig,
     FreeLookConfig, HeadBobConfig, JumpConfig, LandingImpactConfig, LeanConfig, LookConfig,
-    MovementConfig, RecoilConfig, ShakeConfig, TiltConfig,
+    MovementConfig, RecoilConfig, ShakeConfig, ShakeNoiseProfile, TiltConfig, ViewmodelLagConfig,
 };
-pub use layers::{CameraEffectLayer, CameraEffectStack, compose_effect_stack};
+pub use layers::{compose_effect_stack, CameraEffectLayer, CameraEffectStack};
 pub use messages::{CameraRecoilRequest, CameraShakeRequest, FootstepEvent, LandedEvent};
-pub use springs::{DecayConfig, decay_scalar, decay_vec2, decay_vec3};
+pub use springs::{decay_scalar, decay_vec2, decay_vec3, DecayConfig};
 
 use bevy::{
     app::PostStartup,
@@ -106,7 +106,9 @@ impl Plugin for FpsCameraPlugin {
             .register_type::<MovementConfig>()
             .register_type::<RecoilConfig>()
             .register_type::<ShakeConfig>()
+            .register_type::<ShakeNoiseProfile>()
             .register_type::<TiltConfig>()
+            .register_type::<ViewmodelLagConfig>()
             .add_systems(self.activate_schedule, activate_runtime)
             .add_systems(self.deactivate_schedule, deactivate_runtime)
             .configure_sets(

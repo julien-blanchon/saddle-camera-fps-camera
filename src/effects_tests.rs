@@ -1,12 +1,13 @@
 use bevy::prelude::*;
 
 use crate::{
-    FpsCameraConfig,
+    components::FpsCameraInternalState,
     effects::{
         advance_distance_driven_bob, bob_offset, dynamic_fov_target, footstep_crossed,
-        landing_offset, shake_intensity, trauma_decay, trauma_shake,
+        landing_offset, shake_intensity, trauma_decay, trauma_shake, update_viewmodel_lag,
     },
     springs::decay_vec2,
+    FpsCameraConfig, FpsCameraRuntime, ShakeNoiseProfile,
 };
 
 #[test]
@@ -89,4 +90,33 @@ fn trauma_shake_is_zero_without_trauma() {
     let (translation, rotation) = trauma_shake(&config, 0.0, 0.5);
     assert_eq!(translation, Vec3::ZERO);
     assert_eq!(rotation, Vec3::ZERO);
+}
+
+#[test]
+fn different_shake_profiles_produce_distinct_signatures() {
+    let mut handheld = FpsCameraConfig::default();
+    handheld.shake.noise_profile = ShakeNoiseProfile::Handheld;
+
+    let mut explosion = FpsCameraConfig::default();
+    explosion.shake.noise_profile = ShakeNoiseProfile::Explosion;
+
+    let handheld_sample = trauma_shake(&handheld, 0.8, 0.35);
+    let explosion_sample = trauma_shake(&explosion, 0.8, 0.35);
+
+    assert_ne!(handheld_sample, explosion_sample);
+}
+
+#[test]
+fn viewmodel_lag_tracks_recent_look_delta() {
+    let config = FpsCameraConfig::default();
+    let mut runtime = FpsCameraRuntime::default();
+    let mut internal = FpsCameraInternalState {
+        recent_look_delta: Vec2::new(0.12, -0.08),
+        ..Default::default()
+    };
+
+    update_viewmodel_lag(&config, &mut runtime, &mut internal, 0.016);
+
+    assert!(runtime.viewmodel_translation.length() > 0.0);
+    assert!(runtime.viewmodel_rotation.length() > 0.0);
 }

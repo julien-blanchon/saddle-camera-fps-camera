@@ -3,9 +3,9 @@ use std::f32::consts::{PI, TAU};
 use bevy::prelude::*;
 
 use crate::{
-    FpsCameraConfig, FpsCameraIntent, FpsCameraRuntime,
     components::{FpsCamera, FpsCameraInternalState},
     springs::decay_vec2,
+    FpsCameraConfig, FpsCameraIntent, FpsCameraRuntime,
 };
 
 pub(crate) fn ensure_initialized(
@@ -55,7 +55,11 @@ pub(crate) fn apply_shake_input_inversion(mut delta: Vec2, invert_x: bool, inver
 
 pub(crate) fn wrap_angle(angle: f32) -> f32 {
     let wrapped = angle.rem_euclid(TAU);
-    if wrapped > PI { wrapped - TAU } else { wrapped }
+    if wrapped > PI {
+        wrapped - TAU
+    } else {
+        wrapped
+    }
 }
 
 pub(crate) fn apply_look(
@@ -146,6 +150,7 @@ pub(crate) fn apply_look_intent(
             dt,
         );
         internal.look_smoothing = smoothing_state;
+        internal.recent_look_delta = delta;
 
         if intent.free_look && config.free_look.enabled {
             runtime.free_look_offset.x = (runtime.free_look_offset.x + delta.x)

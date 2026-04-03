@@ -15,6 +15,7 @@ pub struct FpsCameraConfig {
     pub tilt: TiltConfig,
     pub landing: LandingImpactConfig,
     pub recoil: RecoilConfig,
+    pub viewmodel: ViewmodelLagConfig,
     pub aim: AimConfig,
     pub lean: LeanConfig,
     pub free_look: FreeLookConfig,
@@ -187,6 +188,15 @@ impl Default for FovConfig {
     }
 }
 
+#[derive(Reflect, Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ShakeNoiseProfile {
+    #[default]
+    Standard,
+    Handheld,
+    Explosion,
+    Rumble,
+}
+
 #[derive(Reflect, Debug, Clone)]
 pub struct ShakeConfig {
     pub translation_amplitude: Vec3,
@@ -195,6 +205,7 @@ pub struct ShakeConfig {
     pub frequency: f32,
     pub max_trauma: f32,
     pub seed: f32,
+    pub noise_profile: ShakeNoiseProfile,
 }
 
 impl Default for ShakeConfig {
@@ -206,6 +217,7 @@ impl Default for ShakeConfig {
             frequency: 27.0,
             max_trauma: 1.0,
             seed: 0.37,
+            noise_profile: ShakeNoiseProfile::Standard,
         }
     }
 }
@@ -263,6 +275,35 @@ impl Default for RecoilConfig {
             recovery: DecayConfig::new(18.0),
             max_pitch: 14.0_f32.to_radians(),
             max_yaw: 9.0_f32.to_radians(),
+        }
+    }
+}
+
+#[derive(Reflect, Debug, Clone)]
+pub struct ViewmodelLagConfig {
+    pub enabled: bool,
+    pub translation_scale: Vec3,
+    pub rotation_scale: Vec3,
+    pub movement_scale: Vec3,
+    pub response: DecayConfig,
+    pub max_translation: Vec3,
+    pub max_rotation: Vec3,
+}
+
+impl Default for ViewmodelLagConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            translation_scale: Vec3::new(0.045, 0.028, 0.030),
+            rotation_scale: Vec3::new(0.030, 0.036, 0.050),
+            movement_scale: Vec3::new(0.008, 0.004, 0.010),
+            response: DecayConfig::new(18.0),
+            max_translation: Vec3::new(0.12, 0.10, 0.10),
+            max_rotation: Vec3::new(
+                7.0_f32.to_radians(),
+                8.0_f32.to_radians(),
+                10.0_f32.to_radians(),
+            ),
         }
     }
 }
@@ -341,6 +382,16 @@ impl ComfortConfig {
             shake_weight: 0.15,
             dynamic_fov_weight: 0.12,
             landing_weight: 0.18,
+        }
+    }
+
+    pub fn vr_mode() -> Self {
+        Self {
+            bob_weight: 0.0,
+            roll_weight: 0.0,
+            shake_weight: 0.08,
+            dynamic_fov_weight: 0.0,
+            landing_weight: 0.06,
         }
     }
 }

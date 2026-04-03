@@ -1,7 +1,9 @@
 use saddle_camera_fps_camera_example_common as common;
 
 use bevy::prelude::*;
-use saddle_camera_fps_camera::{ComfortConfig, FpsCameraConfig, FpsCameraPlugin, HeadBobConfig, TiltConfig};
+use saddle_camera_fps_camera::{
+    ComfortConfig, FpsCameraConfig, FpsCameraPlugin, HeadBobConfig, TiltConfig,
+};
 
 fn main() {
     let mut app = App::new();
@@ -10,6 +12,7 @@ fn main() {
         FpsCameraPlugin::default(),
         common::ExampleCameraControlsPlugin,
     ));
+    common::add_debug_pane(&mut app);
     app.add_systems(Startup, setup);
     app.run();
 }

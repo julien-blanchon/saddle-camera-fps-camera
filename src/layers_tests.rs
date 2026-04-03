@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use crate::{CameraEffectLayer, compose_effect_stack};
+use crate::{compose_effect_stack, CameraEffectLayer, CameraEffectStack};
 
 #[test]
 fn additive_ordering_is_deterministic() {
@@ -40,4 +40,24 @@ fn disabling_one_effect_leaves_others_intact() {
     assert_eq!(stack.translation, Vec3::X);
     assert_eq!(stack.rotation, Vec3::Z);
     assert_eq!(stack.fov_delta, 0.25);
+}
+
+#[test]
+fn stack_builder_accumulates_weighted_layers() {
+    let stack = CameraEffectStack::default()
+        .with_layer(CameraEffectLayer::weighted(
+            Vec3::new(1.0, 0.0, 0.0),
+            Vec3::ZERO,
+            0.0,
+            1.0,
+        ))
+        .with_layer(CameraEffectLayer::weighted(
+            Vec3::new(0.0, 2.0, 0.0),
+            Vec3::ZERO,
+            0.5,
+            0.5,
+        ));
+
+    assert_eq!(stack.translation, Vec3::new(1.0, 1.0, 0.0));
+    assert!((stack.fov_delta - 0.25).abs() < 0.0001);
 }

@@ -19,6 +19,7 @@ fn main() {
         FpsCameraPlugin::default(),
         common::ExampleCameraControlsPlugin,
     ));
+    common::add_debug_pane(&mut app);
     app.add_systems(Startup, setup);
     app.add_systems(Update, pulse_effects);
     app.run();
@@ -65,11 +66,13 @@ fn pulse_effects(
         shake_writer.write(CameraShakeRequest {
             entity: camera,
             trauma: 0.55,
+            duration_override: None,
         });
         recoil_writer.write(CameraRecoilRequest {
             entity: camera,
             pitch: 7.0_f32.to_radians(),
             yaw: 1.5_f32.to_radians(),
+            duration_override: None,
         });
     }
 }

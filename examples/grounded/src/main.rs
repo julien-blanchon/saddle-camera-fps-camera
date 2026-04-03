@@ -12,6 +12,7 @@ fn main() {
         FpsCameraPlugin::default(),
         common::ExampleCameraControlsPlugin,
     ));
+    common::add_debug_pane(&mut app);
     app.add_systems(Startup, setup);
     app.run();
 }

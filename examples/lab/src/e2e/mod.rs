@@ -1,10 +1,10 @@
 use bevy::{ecs::message::Messages, prelude::*};
 use saddle_bevy_e2e::{
-    E2EPlugin, E2ESet,
     action::Action,
     actions::{assertions, inspect},
     init_scenario,
     scenario::Scenario,
+    E2EPlugin, E2ESet,
 };
 use saddle_camera_fps_camera::{
     CameraRecoilRequest, CameraShakeRequest, ComfortConfig, FpsCamera, FpsCameraConfig,
@@ -74,6 +74,7 @@ fn scenario_by_name(name: &str) -> Option<Scenario> {
         "fps_camera_movement" => Some(build_movement()),
         "fps_camera_effects" => Some(build_effects()),
         "fps_camera_comfort" => Some(build_comfort()),
+        "fps_camera_viewmodel" => Some(build_viewmodel()),
         _ => None,
     }
 }
@@ -85,6 +86,7 @@ fn list_scenarios() -> Vec<&'static str> {
         "fps_camera_movement",
         "fps_camera_effects",
         "fps_camera_comfort",
+        "fps_camera_viewmodel",
     ]
 }
 
@@ -237,6 +239,7 @@ fn build_effects() -> Scenario {
                 .write(CameraShakeRequest {
                     entity,
                     trauma: 0.75,
+                    duration_override: None,
                 });
             world
                 .resource_mut::<Messages<CameraRecoilRequest>>()
@@ -244,6 +247,7 @@ fn build_effects() -> Scenario {
                     entity,
                     pitch: 8.0_f32.to_radians(),
                     yaw: 2.0_f32.to_radians(),
+                    duration_override: None,
                 });
         })))
         .then(Action::WaitFrames(2))
@@ -279,6 +283,7 @@ fn build_comfort() -> Scenario {
                 .write(CameraShakeRequest {
                     entity,
                     trauma: 0.8,
+                    duration_override: None,
                 });
         })))
         .then(Action::WaitFrames(2))
@@ -303,6 +308,7 @@ fn build_comfort() -> Scenario {
                 .write(CameraShakeRequest {
                     entity,
                     trauma: 0.8,
+                    duration_override: None,
                 });
         })))
         .then(Action::WaitFrames(2))
@@ -319,6 +325,31 @@ fn build_comfort() -> Scenario {
         ))
         .then(assertions::log_summary("fps_camera_comfort summary"))
         .then(Action::Screenshot("fps_camera_comfort_low_motion".into()))
+        .then(Action::WaitFrames(1))
+        .build()
+}
+
+fn build_viewmodel() -> Scenario {
+    Scenario::builder("fps_camera_viewmodel")
+        .description(
+            "Inject a sharp look delta and verify the runtime publishes non-zero viewmodel lag output.",
+        )
+        .then(Action::WaitFrames(60))
+        .then(Action::Custom(Box::new(|world: &mut World| {
+            if let Some(mut intent) = intent_mut(world) {
+                intent.look_delta = Vec2::new(120.0, -36.0);
+            }
+        })))
+        .then(Action::WaitFrames(2))
+        .then(assertions::component_satisfies::<FpsCameraRuntime>(
+            "viewmodel lag becomes active",
+            |runtime| {
+                runtime.viewmodel_translation.length() > 0.001
+                    || runtime.viewmodel_rotation.length() > 0.001
+            },
+        ))
+        .then(assertions::log_summary("fps_camera_viewmodel summary"))
+        .then(Action::Screenshot("fps_camera_viewmodel".into()))
         .then(Action::WaitFrames(1))
         .build()
 }

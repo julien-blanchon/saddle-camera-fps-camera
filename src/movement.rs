@@ -1,9 +1,9 @@
 use bevy::prelude::*;
 
 use crate::{
-    FpsCameraConfig, FpsCameraExternalMotion, FpsCameraIntent, FpsCameraRuntime,
     components::{FpsCamera, FpsCameraInternalState},
     springs::decay_scalar,
+    FpsCameraConfig, FpsCameraExternalMotion, FpsCameraIntent, FpsCameraRuntime,
 };
 
 pub(crate) fn move_toward(current: f32, target: f32, max_delta: f32) -> f32 {

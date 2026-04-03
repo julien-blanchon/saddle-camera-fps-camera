@@ -21,6 +21,7 @@ Available scenarios:
 - `fps_camera_movement`
 - `fps_camera_effects`
 - `fps_camera_comfort`
+- `fps_camera_viewmodel`
 
 ## BRP
 

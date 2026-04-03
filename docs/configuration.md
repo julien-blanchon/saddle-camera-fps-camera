@@ -16,6 +16,7 @@ All values use Bevy conventions: distances are in world units, rotations are in 
 | `tilt` | `TiltConfig` | default | n/a | Strafe roll |
 | `landing` | `LandingImpactConfig` | default | n/a | Landing compression |
 | `recoil` | `RecoilConfig` | default | n/a | Additive recoil recovery |
+| `viewmodel` | `ViewmodelLagConfig` | default | n/a | First-person weapon or hand lag driven by recent motion |
 | `aim` | `AimConfig` | default | n/a | ADS transition and precision scaling |
 | `lean` | `LeanConfig` | default | n/a | Tactical lean angle and offset |
 | `free_look` | `FreeLookConfig` | default | n/a | Temporary camera-only yaw/pitch offsets |
@@ -109,8 +110,11 @@ Tradeoff: stronger bob sells speed and weight, but it raises motion-sickness ris
 | `rotation_amplitude` | `Vec3` | `(0.03, 0.04, 0.02)` | small | Pitch/yaw/roll shake limits |
 | `decay_rate` | `f32` | `1.85` | `0.8..4.0` | Trauma drain rate |
 | `frequency` | `f32` | `27.0` | `8..40` | Noise frequency |
+| `noise_profile` | `ShakeNoiseProfile` | `Standard` | `Standard`, `Handheld`, `Explosion`, `Rumble` | Picks the procedural shake signature while still using the same trauma envelope |
 | `max_trauma` | `f32` | `1.0` | `0.5..1.5` | Clamp for injected trauma |
 | `seed` | `f32` | `0.37` | any | Deterministic phase offset for tests and replays |
+
+`CameraShakeRequest::duration_override` can temporarily replace the global decay rate for one event without mutating `ShakeConfig`.
 
 ## `TiltConfig`
 
@@ -138,6 +142,22 @@ Tradeoff: stronger bob sells speed and weight, but it raises motion-sickness ris
 | `recovery` | `DecayConfig` | `18.0` decay | `8..30` | Return-to-neutral speed |
 | `max_pitch` | `f32` | `14°` | `2°..20°` | Clamp for stacked pitch recoil |
 | `max_yaw` | `f32` | `9°` | `1°..15°` | Clamp for stacked yaw recoil |
+
+`CameraRecoilRequest::duration_override` can temporarily replace `recovery` for one burst, which is useful for differentiating sidearms, rifles, and cinematic one-off kicks.
+
+## `ViewmodelLagConfig`
+
+| Field | Type | Default | Recommended Range | Effect |
+| --- | --- | --- | --- | --- |
+| `enabled` | `bool` | `true` | `false/true` | Enables viewmodel lag output |
+| `translation_scale` | `Vec3` | small | `0.0..0.08` | Maps recent look deltas into weapon or hand translation |
+| `rotation_scale` | `Vec3` | small | `0.0..0.6` | Maps recent look deltas into local pitch, yaw, and roll |
+| `movement_scale` | `Vec3` | small | `0.0..0.08` | Adds velocity-driven lag so sprinting or strafing can sway the viewmodel |
+| `response` | `DecayConfig` | `14.0` decay | `6..30` | Controls how quickly the lag catches up to the camera |
+| `max_translation` | `Vec3` | small | `0.01..0.18` | Clamp for local viewmodel translation |
+| `max_rotation` | `Vec3` | small | `0.02..0.45` | Clamp for local viewmodel rotation |
+
+Use `FpsCameraRuntime::viewmodel_translation` and `viewmodel_rotation` to drive a separate mesh rig or child hierarchy. The crate intentionally does not assume a specific weapon, hands, or cockpit layout.
 
 ## `AimConfig`
 
@@ -177,3 +197,4 @@ Tradeoff: stronger bob sells speed and weight, but it raises motion-sickness ris
 | `landing_weight` | `f32` | `1.0` | `0.0..1.0` | Multiplies landing compression |
 
 `ComfortConfig::low_motion()` is the recommended accessibility preset.
+`ComfortConfig::vr_mode()` is the most conservative preset and is intended for especially motion-sensitive camera stacks.

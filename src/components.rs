@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use crate::{CameraEffectStack, FpsCameraConfig, config::MovementConfig};
+use crate::{config::MovementConfig, CameraEffectStack, FpsCameraConfig};
 
 #[derive(Component, Reflect, Default, Debug, Clone)]
 #[reflect(Component)]
@@ -55,6 +55,8 @@ pub struct FpsCameraRuntime {
     pub recoil_offset: Vec2,
     pub lean_offset: Vec3,
     pub tilt_roll: f32,
+    pub viewmodel_translation: Vec3,
+    pub viewmodel_rotation: Vec3,
     pub render_translation: Vec3,
     pub render_rotation: Vec3,
     pub effect_stack: CameraEffectStack,
@@ -87,6 +89,8 @@ impl Default for FpsCameraRuntime {
             recoil_offset: Vec2::ZERO,
             lean_offset: Vec3::ZERO,
             tilt_roll: 0.0,
+            viewmodel_translation: Vec3::ZERO,
+            viewmodel_rotation: Vec3::ZERO,
             render_translation: Vec3::ZERO,
             render_rotation: Vec3::ZERO,
             effect_stack: CameraEffectStack::default(),
@@ -129,6 +133,11 @@ pub(crate) struct FpsCameraInternalState {
     pub cumulative_bob_phase: f32,
     pub next_footstep_phase: f32,
     pub shake_time: f32,
+    pub recent_look_delta: Vec2,
+    pub viewmodel_translation: Vec3,
+    pub viewmodel_rotation: Vec3,
+    pub shake_decay_override: Option<f32>,
+    pub recoil_recovery_override: Option<crate::DecayConfig>,
     pub previous_grounded: bool,
 }
 
@@ -146,6 +155,11 @@ impl Default for FpsCameraInternalState {
             cumulative_bob_phase: 0.0,
             next_footstep_phase: std::f32::consts::PI,
             shake_time: 0.0,
+            recent_look_delta: Vec2::ZERO,
+            viewmodel_translation: Vec3::ZERO,
+            viewmodel_rotation: Vec3::ZERO,
+            shake_decay_override: None,
+            recoil_recovery_override: None,
             previous_grounded: true,
         }
     }

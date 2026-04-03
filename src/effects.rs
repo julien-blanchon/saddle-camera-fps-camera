@@ -3,19 +3,32 @@ use std::f32::consts::{PI, TAU};
 use bevy::{ecs::message::MessageReader, prelude::*};
 
 use crate::{
-    CameraEffectLayer, FpsCameraConfig, FpsCameraExternalEffects, FpsCameraRuntime, LandedEvent,
     components::{FpsCamera, FpsCameraInternalState},
-    compose_effect_stack, decay_scalar, decay_vec2,
+    compose_effect_stack, decay_scalar, decay_vec2, decay_vec3,
     messages::{CameraRecoilRequest, CameraShakeRequest, FootstepEvent},
+    CameraEffectLayer, FpsCameraConfig, FpsCameraExternalEffects, FpsCameraRuntime, LandedEvent,
 };
+
+fn duration_to_decay_rate(duration_secs: f32) -> Option<f32> {
+    (duration_secs > 0.0).then(|| 6.0 / duration_secs.max(0.001))
+}
 
 pub(crate) fn apply_shake_requests(
     mut requests: MessageReader<CameraShakeRequest>,
-    mut query: Query<(&FpsCameraConfig, &mut FpsCameraRuntime), With<FpsCamera>>,
+    mut query: Query<
+        (
+            &FpsCameraConfig,
+            &mut FpsCameraRuntime,
+            &mut FpsCameraInternalState,
+        ),
+        With<FpsCamera>,
+    >,
 ) {
     for request in requests.read() {
-        if let Ok((config, mut runtime)) = query.get_mut(request.entity) {
+        if let Ok((config, mut runtime, mut internal)) = query.get_mut(request.entity) {
             runtime.trauma = (runtime.trauma + request.trauma).clamp(0.0, config.shake.max_trauma);
+            internal.shake_decay_override =
+                request.duration_override.and_then(duration_to_decay_rate);
         }
     }
 }
@@ -30,6 +43,9 @@ pub(crate) fn apply_recoil_requests(
                 internal.recoil = Vec2::ZERO;
                 continue;
             }
+            internal.recoil_recovery_override = request
+                .duration_override
+                .and_then(|duration| duration_to_decay_rate(duration).map(crate::DecayConfig::new));
             internal.recoil.x = (internal.recoil.x + request.pitch)
                 .clamp(-config.recoil.max_pitch, config.recoil.max_pitch);
             internal.recoil.y = (internal.recoil.y + request.yaw)
@@ -128,15 +144,104 @@ pub(crate) fn shake_intensity(trauma: f32) -> f32 {
 pub(crate) fn trauma_shake(config: &FpsCameraConfig, trauma: f32, time_secs: f32) -> (Vec3, Vec3) {
     let intensity = shake_intensity(trauma) * config.comfort.shake_weight;
     let t = time_secs * config.shake.frequency + config.shake.seed;
+    let (translation_frequency, rotation_frequency, phase_offset) = match config.shake.noise_profile
+    {
+        crate::ShakeNoiseProfile::Standard => (
+            Vec3::new(1.07, 1.31, 0.89),
+            Vec3::new(0.81, 1.17, 1.43),
+            Vec3::new(0.0, 0.35, 0.72),
+        ),
+        crate::ShakeNoiseProfile::Handheld => (
+            Vec3::new(0.72, 0.91, 0.56),
+            Vec3::new(0.66, 0.84, 1.02),
+            Vec3::new(0.15, 0.48, 0.91),
+        ),
+        crate::ShakeNoiseProfile::Explosion => (
+            Vec3::new(1.64, 1.48, 1.22),
+            Vec3::new(1.21, 1.42, 1.67),
+            Vec3::new(0.45, 0.83, 1.14),
+        ),
+        crate::ShakeNoiseProfile::Rumble => (
+            Vec3::new(0.42, 0.51, 0.37),
+            Vec3::new(0.34, 0.48, 0.61),
+            Vec3::new(0.09, 0.31, 0.57),
+        ),
+    };
 
-    let translation = Vec3::new((t * 1.07).sin(), (t * 1.31).cos(), (t * 0.89).sin())
-        * config.shake.translation_amplitude
+    let translation = Vec3::new(
+        (t * translation_frequency.x + phase_offset.x).sin(),
+        (t * translation_frequency.y + phase_offset.y).cos(),
+        (t * translation_frequency.z + phase_offset.z).sin(),
+    ) * config.shake.translation_amplitude
         * intensity;
-    let rotation = Vec3::new((t * 0.81).sin(), (t * 1.17).cos(), (t * 1.43).sin())
-        * config.shake.rotation_amplitude
+    let rotation = Vec3::new(
+        (t * rotation_frequency.x + phase_offset.y).sin(),
+        (t * rotation_frequency.y + phase_offset.z).cos(),
+        (t * rotation_frequency.z + phase_offset.x).sin(),
+    ) * config.shake.rotation_amplitude
         * intensity;
 
     (translation, rotation)
+}
+
+fn clamp_vec3_magnitude(value: Vec3, limit: Vec3) -> Vec3 {
+    Vec3::new(
+        value.x.clamp(-limit.x, limit.x),
+        value.y.clamp(-limit.y, limit.y),
+        value.z.clamp(-limit.z, limit.z),
+    )
+}
+
+fn update_viewmodel_lag(
+    config: &FpsCameraConfig,
+    runtime: &mut FpsCameraRuntime,
+    internal: &mut FpsCameraInternalState,
+    dt: f32,
+) {
+    if !config.viewmodel.enabled {
+        internal.viewmodel_translation = Vec3::ZERO;
+        internal.viewmodel_rotation = Vec3::ZERO;
+        runtime.viewmodel_translation = Vec3::ZERO;
+        runtime.viewmodel_rotation = Vec3::ZERO;
+        return;
+    }
+
+    let local_velocity = Quat::from_rotation_y(-runtime.yaw) * runtime.velocity;
+    let look = internal.recent_look_delta;
+    let target_translation = clamp_vec3_magnitude(
+        Vec3::new(
+            -look.x * config.viewmodel.translation_scale.x
+                + local_velocity.x * config.viewmodel.movement_scale.x,
+            look.y * config.viewmodel.translation_scale.y
+                + runtime.crouch_alpha * config.viewmodel.movement_scale.y,
+            -look.y * config.viewmodel.translation_scale.z
+                - local_velocity.z * config.viewmodel.movement_scale.z,
+        ),
+        config.viewmodel.max_translation,
+    );
+    let target_rotation = clamp_vec3_magnitude(
+        Vec3::new(
+            look.y * config.viewmodel.rotation_scale.x,
+            -look.x * config.viewmodel.rotation_scale.y,
+            -look.x * config.viewmodel.rotation_scale.z,
+        ),
+        config.viewmodel.max_rotation,
+    );
+
+    internal.viewmodel_translation = decay_vec3(
+        internal.viewmodel_translation,
+        target_translation,
+        config.viewmodel.response,
+        dt,
+    );
+    internal.viewmodel_rotation = decay_vec3(
+        internal.viewmodel_rotation,
+        target_rotation,
+        config.viewmodel.response,
+        dt,
+    );
+    runtime.viewmodel_translation = internal.viewmodel_translation;
+    runtime.viewmodel_rotation = internal.viewmodel_rotation;
 }
 
 pub(crate) fn footstep_crossed(previous: f32, current: f32, threshold: f32) -> bool {
@@ -170,9 +275,21 @@ pub(crate) fn update_camera_state(
             );
         }
 
-        runtime.trauma = trauma_decay(runtime.trauma, config.shake.decay_rate, dt);
+        let shake_decay = internal
+            .shake_decay_override
+            .unwrap_or(config.shake.decay_rate);
+        runtime.trauma = trauma_decay(runtime.trauma, shake_decay, dt);
+        if runtime.trauma <= f32::EPSILON {
+            internal.shake_decay_override = None;
+        }
         if config.recoil.enabled {
-            internal.recoil = decay_vec2(internal.recoil, Vec2::ZERO, config.recoil.recovery, dt);
+            let recoil_decay = internal
+                .recoil_recovery_override
+                .unwrap_or(config.recoil.recovery);
+            internal.recoil = decay_vec2(internal.recoil, Vec2::ZERO, recoil_decay, dt);
+            if internal.recoil.length_squared() <= 0.000_001 {
+                internal.recoil_recovery_override = None;
+            }
         } else {
             internal.recoil = Vec2::ZERO;
         }
@@ -256,6 +373,7 @@ pub(crate) fn update_camera_state(
             Vec2::ZERO
         };
         runtime.recent_landing_impulse = internal.landing_amount;
+        update_viewmodel_lag(config, &mut runtime, &mut internal, dt);
     }
 }
 

@@ -125,14 +125,12 @@ fn messages_register_correctly() {
 
     assert!(app.world().contains_resource::<Messages<FootstepEvent>>());
     assert!(app.world().contains_resource::<Messages<LandedEvent>>());
-    assert!(
-        app.world()
-            .contains_resource::<Messages<CameraShakeRequest>>()
-    );
-    assert!(
-        app.world()
-            .contains_resource::<Messages<CameraRecoilRequest>>()
-    );
+    assert!(app
+        .world()
+        .contains_resource::<Messages<CameraShakeRequest>>());
+    assert!(app
+        .world()
+        .contains_resource::<Messages<CameraRecoilRequest>>());
 }
 
 #[test]
@@ -324,6 +322,7 @@ fn disabled_recoil_config_rejects_recoil_requests() {
             entity,
             pitch: 0.25,
             yaw: 0.15,
+            duration_override: None,
         });
     app.update();
 
