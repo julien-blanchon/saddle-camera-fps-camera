@@ -125,12 +125,14 @@ fn messages_register_correctly() {
 
     assert!(app.world().contains_resource::<Messages<FootstepEvent>>());
     assert!(app.world().contains_resource::<Messages<LandedEvent>>());
-    assert!(app
-        .world()
-        .contains_resource::<Messages<CameraShakeRequest>>());
-    assert!(app
-        .world()
-        .contains_resource::<Messages<CameraRecoilRequest>>());
+    assert!(
+        app.world()
+            .contains_resource::<Messages<CameraShakeRequest>>()
+    );
+    assert!(
+        app.world()
+            .contains_resource::<Messages<CameraRecoilRequest>>()
+    );
 }
 
 #[test]

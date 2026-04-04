@@ -1,11 +1,11 @@
 use bevy::prelude::*;
 
 use crate::{
+    FpsCameraConfig,
     movement::{
         desired_planar_velocity, integrate_planar_velocity, jump_velocity, movement_basis,
         target_speed,
     },
-    FpsCameraConfig,
 };
 
 #[test]

@@ -15,9 +15,9 @@ pub use config::{
     FreeLookConfig, HeadBobConfig, JumpConfig, LandingImpactConfig, LeanConfig, LookConfig,
     MovementConfig, RecoilConfig, ShakeConfig, ShakeNoiseProfile, TiltConfig, ViewmodelLagConfig,
 };
-pub use layers::{compose_effect_stack, CameraEffectLayer, CameraEffectStack};
+pub use layers::{CameraEffectLayer, CameraEffectStack, compose_effect_stack};
 pub use messages::{CameraRecoilRequest, CameraShakeRequest, FootstepEvent, LandedEvent};
-pub use springs::{decay_scalar, decay_vec2, decay_vec3, DecayConfig};
+pub use springs::{DecayConfig, decay_scalar, decay_vec2, decay_vec3};
 
 use bevy::{
     app::PostStartup,

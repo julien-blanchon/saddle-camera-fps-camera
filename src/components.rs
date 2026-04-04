@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use crate::{config::MovementConfig, CameraEffectStack, FpsCameraConfig};
+use crate::{CameraEffectStack, FpsCameraConfig, config::MovementConfig};
 
 #[derive(Component, Reflect, Default, Debug, Clone)]
 #[reflect(Component)]

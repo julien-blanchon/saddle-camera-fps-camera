@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use crate::{decay_scalar, decay_vec3, DecayConfig};
+use crate::{DecayConfig, decay_scalar, decay_vec3};
 
 #[test]
 fn convergence_to_target() {

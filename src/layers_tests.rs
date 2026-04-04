@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use crate::{compose_effect_stack, CameraEffectLayer, CameraEffectStack};
+use crate::{CameraEffectLayer, CameraEffectStack, compose_effect_stack};
 
 #[test]
 fn additive_ordering_is_deterministic() {
