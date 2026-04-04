@@ -1,3 +1,6 @@
+#[cfg(feature = "e2e")]
+mod e2e;
+
 use avian3d::prelude::*;
 use bevy::{
     input::common_conditions::input_just_pressed,
@@ -7,8 +10,8 @@ use bevy::{
     window::{CursorGrabMode, CursorOptions, PrimaryWindow, WindowPlugin},
 };
 use bevy_enhanced_input::prelude::{
-    actions, bindings, Action, Axial, Binding, Bindings, Cardinal, DeadZone, Fire, InputAction,
-    Scale,
+    Action, Axial, Binding, Bindings, Cardinal, DeadZone, Fire, InputAction, Scale, actions,
+    bindings,
 };
 use bevy_enhanced_input::preset::WithBundle;
 use saddle_camera_fps_camera::{
@@ -94,6 +97,8 @@ fn main() {
             FpsCameraPlugin::default(),
             CharacterControllerPlugin::always_on(FixedUpdate),
         ));
+    #[cfg(feature = "e2e")]
+    app.add_plugins(e2e::ExternalMotionE2EPlugin);
     common::add_debug_pane(&mut app);
     app.register_pane::<ControllerPane>()
         .add_observer(fire_weapon)
@@ -259,6 +264,7 @@ fn spawn_viewmodel(
             .spawn((
                 Name::new("Viewmodel Root"),
                 ViewmodelRoot,
+                Visibility::Inherited,
                 Transform::from_xyz(0.34, -0.32, -0.72),
             ))
             .with_children(|viewmodel| {

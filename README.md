@@ -101,6 +101,12 @@ The crate exposes comfort as weights instead of hard on/off branches. `ComfortCo
 
 Every example includes a live `saddle-pane` control surface so the main parameters can be tuned while the scene is running.
 
+The P0 FPS integration demo also ships with example-level smoke coverage:
+
+```bash
+cargo run -p saddle-camera-fps-camera-example-external-motion --features e2e -- fps_external_motion_smoke
+```
+
 ## Workspace Lab
 
 The richer lab app lives inside the crate at `shared/camera/saddle-camera-fps-camera/examples/lab`:
