@@ -4,7 +4,7 @@ use bevy::{ecs::message::MessageReader, prelude::*};
 
 use crate::{
     CameraEffectLayer, FpsCameraConfig, FpsCameraExternalEffects, FpsCameraRuntime, LandedEvent,
-    components::{FpsCamera, FpsCameraInternalState},
+    components::{FpsCamera, FpsCameraCollisionFeedback, FpsCameraInternalState},
     compose_effect_stack, decay_scalar, decay_vec2, decay_vec3,
     messages::{CameraRecoilRequest, CameraShakeRequest, FootstepEvent},
 };
@@ -494,10 +494,28 @@ pub(crate) fn sync_projection(
 }
 
 pub(crate) fn sync_transform(
-    mut query: Query<(&FpsCameraRuntime, &mut Transform), With<FpsCamera>>,
+    mut query: Query<
+        (
+            &FpsCameraConfig,
+            &FpsCameraRuntime,
+            Option<&FpsCameraCollisionFeedback>,
+            &mut Transform,
+        ),
+        With<FpsCamera>,
+    >,
 ) {
-    for (runtime, mut transform) in &mut query {
-        transform.translation = runtime.render_translation;
+    for (config, runtime, collision, mut transform) in &mut query {
+        let mut final_translation = runtime.render_translation;
+
+        if config.collision.enabled
+            && let Some(feedback) = collision.filter(|f| f.blocked)
+        {
+            let push = feedback.push_normal * config.collision.push_margin;
+            final_translation += push;
+            let _ = feedback.nearest_distance;
+        }
+
+        transform.translation = final_translation;
         transform.rotation = Quat::from_euler(
             EulerRot::YXZ,
             runtime.render_rotation.y,

@@ -20,6 +20,7 @@ All values use Bevy conventions: distances are in world units, rotations are in 
 | `aim` | `AimConfig` | default | n/a | ADS transition and precision scaling |
 | `lean` | `LeanConfig` | default | n/a | Tactical lean angle and offset |
 | `free_look` | `FreeLookConfig` | default | n/a | Temporary camera-only yaw/pitch offsets |
+| `collision` | `CollisionConfig` | default | n/a | Camera collision push-back from external physics feedback |
 | `comfort` | `ComfortConfig` | default | n/a | Global motion reduction weights |
 
 ## `LookConfig`
@@ -83,9 +84,9 @@ Tradeoff: more smoothing softens jitter and controller noise, but it also reduce
 | Field | Type | Default | Recommended Range | Effect |
 | --- | --- | --- | --- | --- |
 | `enabled` | `bool` | `true` | `false/true` | Enables gait-linked bob |
-| `amplitude` | `Vec3` | `(0.025, 0.045, 0.018)` | low single-digit centimeters | Translation amplitude for lateral, vertical, and fore-aft bob |
+| `amplitude` | `Vec3` | `(0.018, 0.032, 0.012)` | low single-digit centimeters | Translation amplitude for lateral, vertical, and fore-aft bob |
 | `stride_length` | `f32` | `1.55` | `1.0..2.5` | Lower values increase cadence |
-| `sprint_multiplier` | `f32` | `1.35` | `1.0..2.0` | Boosts bob intensity while sprinting |
+| `sprint_multiplier` | `f32` | `1.15` | `1.0..2.0` | Boosts bob intensity while sprinting |
 | `crouch_multiplier` | `f32` | `0.65` | `0.2..1.0` | Reduces bob while crouched |
 | `idle_sway_translation` | `Vec3` | small | very small | Subtle breathing-style drift when nearly stationary |
 | `idle_sway_rotation` | `Vec2` | small | very small | Idle pitch and roll micro-motion |
@@ -185,6 +186,16 @@ Use `FpsCameraRuntime::viewmodel_translation` and `viewmodel_rotation` to drive 
 | `yaw_limit` | `f32` | `55°` | `10°..90°` | Maximum camera-only yaw |
 | `pitch_limit` | `f32` | `18°` | `5°..35°` | Maximum camera-only pitch |
 | `recenter` | `DecayConfig` | `12.0` decay | `4..20` | Return speed after free-look ends |
+
+## `CollisionConfig`
+
+| Field | Type | Default | Recommended Range | Effect |
+| --- | --- | --- | --- | --- |
+| `enabled` | `bool` | `true` | `false/true` | Enables collision push-back in `SyncTransform` |
+| `push_margin` | `f32` | `0.15` | `0.05..0.3` | Distance to push the camera away from the collision surface |
+| `response` | `DecayConfig` | `20.0` decay | `8..30` | Controls how quickly collision push-back is applied |
+
+Feed `FpsCameraCollisionFeedback` from an external physics system (raycast, sphere-cast, etc.). When `blocked` is `true`, the camera applies `push_normal * push_margin` to the final render position. The crate intentionally does not depend on any physics engine.
 
 ## `ComfortConfig`
 

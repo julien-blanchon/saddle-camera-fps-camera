@@ -8,12 +8,14 @@ mod movement;
 mod springs;
 
 pub use components::{
-    FpsCamera, FpsCameraExternalEffects, FpsCameraExternalMotion, FpsCameraIntent, FpsCameraRuntime,
+    FpsCamera, FpsCameraCollisionFeedback, FpsCameraExternalEffects, FpsCameraExternalMotion,
+    FpsCameraIntent, FpsCameraRuntime,
 };
 pub use config::{
-    AimConfig, AnalogLookConfig, ComfortConfig, CrouchConfig, FovConfig, FpsCameraConfig,
-    FreeLookConfig, HeadBobConfig, JumpConfig, LandingImpactConfig, LeanConfig, LookConfig,
-    MovementConfig, RecoilConfig, ShakeConfig, ShakeNoiseProfile, TiltConfig, ViewmodelLagConfig,
+    AimConfig, AnalogLookConfig, CollisionConfig, ComfortConfig, CrouchConfig, FovConfig,
+    FpsCameraConfig, FreeLookConfig, HeadBobConfig, JumpConfig, LandingImpactConfig, LeanConfig,
+    LookConfig, MovementConfig, RecoilConfig, ShakeConfig, ShakeNoiseProfile, TiltConfig,
+    ViewmodelLagConfig,
 };
 pub use layers::{CameraEffectLayer, CameraEffectStack, compose_effect_stack};
 pub use messages::{CameraRecoilRequest, CameraShakeRequest, FootstepEvent, LandedEvent};
@@ -87,6 +89,7 @@ impl Plugin for FpsCameraPlugin {
             .register_type::<AnalogLookConfig>()
             .register_type::<CameraEffectLayer>()
             .register_type::<CameraEffectStack>()
+            .register_type::<CollisionConfig>()
             .register_type::<ComfortConfig>()
             .register_type::<CrouchConfig>()
             .register_type::<DecayConfig>()
@@ -95,6 +98,7 @@ impl Plugin for FpsCameraPlugin {
             .register_type::<FpsCamera>()
             .register_type::<FpsCameraConfig>()
             .register_type::<FpsCameraExternalEffects>()
+            .register_type::<FpsCameraCollisionFeedback>()
             .register_type::<FpsCameraExternalMotion>()
             .register_type::<FpsCameraIntent>()
             .register_type::<FpsCameraRuntime>()

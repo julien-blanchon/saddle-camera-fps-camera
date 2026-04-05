@@ -10,7 +10,7 @@ The runtime is intentionally layered:
 4. `UpdateCameraState` derives stance alphas, bob phase, landing impulses, trauma decay, viewmodel lag state, and runtime diagnostics.
 5. `ComposeEffects` builds additive effect layers and resolves final render-space translation, rotation, and FOV.
 6. `SyncProjection` writes the resolved world FOV into Bevy’s `Projection`.
-7. `SyncTransform` writes the final render transform in `PostUpdate` before transform propagation.
+7. `SyncTransform` writes the final render transform in `PostUpdate` before transform propagation, applying collision push-back from `FpsCameraCollisionFeedback` if present.
 
 ## Logical Vs Render Camera
 
@@ -79,6 +79,7 @@ For extension, prefer these seams in order:
 1. Feed `FpsCameraIntent` if you want to drive the stock logic with a different input source.
 2. Feed `FpsCameraExternalMotion` if a separate controller owns movement and grounding.
 3. Feed `FpsCameraExternalEffects` if another system wants to add camera punch, scripted sway, breathing, or other custom presentation layers.
-4. Read `FpsCameraRuntime::viewmodel_translation` / `viewmodel_rotation` if a separate system owns weapon or cockpit presentation.
+4. Feed `FpsCameraCollisionFeedback` if a physics system detects camera-to-wall collisions. The crate applies push-back in `SyncTransform` without depending on a physics engine.
+5. Read `FpsCameraRuntime::viewmodel_translation` / `viewmodel_rotation` if a separate system owns weapon or cockpit presentation.
 
 Avoid writing `Transform` directly from outside the crate. That bypasses the logical/cosmetic split and makes ordering brittle.

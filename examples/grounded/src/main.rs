@@ -10,12 +10,12 @@ use bevy::{
 };
 use bevy_enhanced_input::context::InputContextAppExt;
 use bevy_enhanced_input::prelude::{
-    actions, bindings, Action, Axial, Bidirectional, Binding, Bindings, Cancel as InputCancel,
-    Cardinal, Complete, EnhancedInputPlugin, Fire, InputAction, Press, Scale, Start,
+    Action, Axial, Bidirectional, Binding, Bindings, Cancel as InputCancel, Cardinal, Complete,
+    EnhancedInputPlugin, Fire, InputAction, Press, Scale, Start, actions, bindings,
 };
 use saddle_camera_fps_camera::{
-    CrouchConfig, FpsCamera, FpsCameraConfig, FpsCameraIntent, FpsCameraPlugin,
-    FpsCameraRuntime, FpsCameraSystems, HeadBobConfig, LandingImpactConfig,
+    CrouchConfig, FpsCamera, FpsCameraConfig, FpsCameraIntent, FpsCameraPlugin, FpsCameraRuntime,
+    FpsCameraSystems, HeadBobConfig, LandingImpactConfig,
 };
 use saddle_pane::prelude::*;
 
@@ -108,6 +108,9 @@ impl Default for FpsCameraPane {
 #[derive(Component)]
 struct Overlay;
 
+#[derive(Component)]
+struct CursorIndicator;
+
 fn main() {
     let mut app = App::new();
     app.add_plugins((
@@ -151,8 +154,10 @@ fn main() {
         (
             capture_cursor.run_if(input_just_pressed(MouseButton::Left)),
             release_cursor.run_if(input_just_pressed(KeyCode::Escape)),
+            toggle_cursor.run_if(input_just_pressed(KeyCode::Tab)),
             sync_pane.after(FpsCameraSystems::SyncProjection),
             sync_overlay.after(FpsCameraSystems::SyncProjection),
+            sync_cursor_indicator.after(FpsCameraSystems::SyncProjection),
         ),
     );
     app.run();
@@ -339,11 +344,40 @@ fn spawn_reference_scene(
         },
         TextColor(Color::WHITE),
     ));
+
+    commands.spawn((
+        Name::new("Cursor State Indicator"),
+        CursorIndicator,
+        Node {
+            position_type: PositionType::Absolute,
+            left: Val::Percent(50.0),
+            top: Val::Px(18.0),
+            padding: UiRect::axes(Val::Px(12.0), Val::Px(6.0)),
+            margin: UiRect::left(Val::Px(-100.0)),
+            width: Val::Px(200.0),
+            justify_content: JustifyContent::Center,
+            ..default()
+        },
+        BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.70)),
+        Text::new("[Click to capture mouse]"),
+        TextFont {
+            font_size: 13.0,
+            ..default()
+        },
+        TextColor(Color::srgba(1.0, 1.0, 0.6, 0.9)),
+    ));
 }
 
 // ---------------------------------------------------------------------------
 // Cursor
 // ---------------------------------------------------------------------------
+
+fn is_cursor_captured(cursor: &CursorOptions) -> bool {
+    matches!(
+        cursor.grab_mode,
+        CursorGrabMode::Locked | CursorGrabMode::Confined
+    )
+}
 
 fn capture_cursor(mut cursor: Single<&mut CursorOptions, With<PrimaryWindow>>) {
     cursor.visible = false;
@@ -353,6 +387,34 @@ fn capture_cursor(mut cursor: Single<&mut CursorOptions, With<PrimaryWindow>>) {
 fn release_cursor(mut cursor: Single<&mut CursorOptions, With<PrimaryWindow>>) {
     cursor.visible = true;
     cursor.grab_mode = CursorGrabMode::None;
+}
+
+fn toggle_cursor(mut cursor: Single<&mut CursorOptions, With<PrimaryWindow>>) {
+    if is_cursor_captured(&cursor) {
+        cursor.visible = true;
+        cursor.grab_mode = CursorGrabMode::None;
+    } else {
+        cursor.visible = false;
+        cursor.grab_mode = CursorGrabMode::Locked;
+    }
+}
+
+fn sync_cursor_indicator(
+    cursor: Single<&CursorOptions, With<PrimaryWindow>>,
+    mut indicator: Query<(&mut Text, &mut BackgroundColor, &mut TextColor), With<CursorIndicator>>,
+) {
+    let Ok((mut text, mut bg, mut color)) = indicator.single_mut() else {
+        return;
+    };
+    if is_cursor_captured(&cursor) {
+        text.0 = "Mouse captured [Tab/Esc to release]".into();
+        bg.0 = Color::srgba(0.0, 0.2, 0.0, 0.50);
+        color.0 = Color::srgba(0.7, 1.0, 0.7, 0.7);
+    } else {
+        text.0 = "Mouse free [Click to capture, Tab to toggle]".into();
+        bg.0 = Color::srgba(0.3, 0.15, 0.0, 0.70);
+        color.0 = Color::srgba(1.0, 1.0, 0.6, 0.9);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -406,7 +468,7 @@ fn sync_overlay(
     let (runtime, config) = runtime.into_inner();
     overlay.0 = format!(
         "FPS Camera Grounded\nWASD move, mouse look, Space jump, Shift sprint, Ctrl crouch\n\
-        RMB aim, Q/E lean, Esc release cursor\n\n\
+        RMB aim, Q/E lean, Tab toggle cursor\n\n\
         speed {:.2}  grounded {}  crouch {:.2}\n\
         bob amp ({:.3}, {:.3})  stride {:.2}  sprint x{:.1}\n\
         landing translation {:.2}  pitch {:.1} deg",
@@ -427,71 +489,172 @@ fn sync_overlay(
 // ---------------------------------------------------------------------------
 
 fn on_move(trigger: On<Fire<MoveAction>>, mut q: Query<&mut FpsCameraIntent, With<FpsCamera>>) {
-    if let Ok(mut i) = q.get_mut(trigger.context) { i.move_axis = trigger.value; }
+    if let Ok(mut i) = q.get_mut(trigger.context) {
+        i.move_axis = trigger.value;
+    }
 }
-fn on_move_cancel(trigger: On<InputCancel<MoveAction>>, mut q: Query<&mut FpsCameraIntent, With<FpsCamera>>) {
-    if let Ok(mut i) = q.get_mut(trigger.context) { i.move_axis = Vec2::ZERO; }
+fn on_move_cancel(
+    trigger: On<InputCancel<MoveAction>>,
+    mut q: Query<&mut FpsCameraIntent, With<FpsCamera>>,
+) {
+    if let Ok(mut i) = q.get_mut(trigger.context) {
+        i.move_axis = Vec2::ZERO;
+    }
 }
-fn on_move_complete(trigger: On<Complete<MoveAction>>, mut q: Query<&mut FpsCameraIntent, With<FpsCamera>>) {
-    if let Ok(mut i) = q.get_mut(trigger.context) { i.move_axis = Vec2::ZERO; }
+fn on_move_complete(
+    trigger: On<Complete<MoveAction>>,
+    mut q: Query<&mut FpsCameraIntent, With<FpsCamera>>,
+) {
+    if let Ok(mut i) = q.get_mut(trigger.context) {
+        i.move_axis = Vec2::ZERO;
+    }
 }
-fn on_mouse_look(trigger: On<Fire<MouseLookAction>>, mut q: Query<&mut FpsCameraIntent, With<FpsCamera>>) {
-    if let Ok(mut i) = q.get_mut(trigger.context) { i.look_delta += trigger.value; }
+fn on_mouse_look(
+    trigger: On<Fire<MouseLookAction>>,
+    mut q: Query<&mut FpsCameraIntent, With<FpsCamera>>,
+    window: Single<&CursorOptions, With<PrimaryWindow>>,
+) {
+    if !is_cursor_captured(&window) {
+        return;
+    }
+    if let Ok(mut i) = q.get_mut(trigger.context) {
+        i.look_delta += trigger.value;
+    }
 }
-fn on_analog_look(trigger: On<Fire<AnalogLookAction>>, mut q: Query<&mut FpsCameraIntent, With<FpsCamera>>) {
-    if let Ok(mut i) = q.get_mut(trigger.context) { i.look_analog = trigger.value; }
+fn on_analog_look(
+    trigger: On<Fire<AnalogLookAction>>,
+    mut q: Query<&mut FpsCameraIntent, With<FpsCamera>>,
+) {
+    if let Ok(mut i) = q.get_mut(trigger.context) {
+        i.look_analog = trigger.value;
+    }
 }
-fn on_analog_look_cancel(trigger: On<InputCancel<AnalogLookAction>>, mut q: Query<&mut FpsCameraIntent, With<FpsCamera>>) {
-    if let Ok(mut i) = q.get_mut(trigger.context) { i.look_analog = Vec2::ZERO; }
+fn on_analog_look_cancel(
+    trigger: On<InputCancel<AnalogLookAction>>,
+    mut q: Query<&mut FpsCameraIntent, With<FpsCamera>>,
+) {
+    if let Ok(mut i) = q.get_mut(trigger.context) {
+        i.look_analog = Vec2::ZERO;
+    }
 }
-fn on_analog_look_complete(trigger: On<Complete<AnalogLookAction>>, mut q: Query<&mut FpsCameraIntent, With<FpsCamera>>) {
-    if let Ok(mut i) = q.get_mut(trigger.context) { i.look_analog = Vec2::ZERO; }
+fn on_analog_look_complete(
+    trigger: On<Complete<AnalogLookAction>>,
+    mut q: Query<&mut FpsCameraIntent, With<FpsCamera>>,
+) {
+    if let Ok(mut i) = q.get_mut(trigger.context) {
+        i.look_analog = Vec2::ZERO;
+    }
 }
 fn on_jump(trigger: On<Start<JumpAction>>, mut q: Query<&mut FpsCameraIntent, With<FpsCamera>>) {
-    if let Ok(mut i) = q.get_mut(trigger.context) { i.jump_pressed = true; }
+    if let Ok(mut i) = q.get_mut(trigger.context) {
+        i.jump_pressed = true;
+    }
 }
 fn on_sprint(trigger: On<Fire<SprintAction>>, mut q: Query<&mut FpsCameraIntent, With<FpsCamera>>) {
-    if let Ok(mut i) = q.get_mut(trigger.context) { i.sprint_pressed = trigger.value; }
+    if let Ok(mut i) = q.get_mut(trigger.context) {
+        i.sprint_pressed = trigger.value;
+    }
 }
-fn on_sprint_cancel(trigger: On<InputCancel<SprintAction>>, mut q: Query<&mut FpsCameraIntent, With<FpsCamera>>) {
-    if let Ok(mut i) = q.get_mut(trigger.context) { i.sprint_pressed = false; }
+fn on_sprint_cancel(
+    trigger: On<InputCancel<SprintAction>>,
+    mut q: Query<&mut FpsCameraIntent, With<FpsCamera>>,
+) {
+    if let Ok(mut i) = q.get_mut(trigger.context) {
+        i.sprint_pressed = false;
+    }
 }
-fn on_sprint_complete(trigger: On<Complete<SprintAction>>, mut q: Query<&mut FpsCameraIntent, With<FpsCamera>>) {
-    if let Ok(mut i) = q.get_mut(trigger.context) { i.sprint_pressed = false; }
+fn on_sprint_complete(
+    trigger: On<Complete<SprintAction>>,
+    mut q: Query<&mut FpsCameraIntent, With<FpsCamera>>,
+) {
+    if let Ok(mut i) = q.get_mut(trigger.context) {
+        i.sprint_pressed = false;
+    }
 }
 fn on_crouch(trigger: On<Fire<CrouchAction>>, mut q: Query<&mut FpsCameraIntent, With<FpsCamera>>) {
-    if let Ok(mut i) = q.get_mut(trigger.context) { i.crouch_pressed = trigger.value; }
+    if let Ok(mut i) = q.get_mut(trigger.context) {
+        i.crouch_pressed = trigger.value;
+    }
 }
-fn on_crouch_cancel(trigger: On<InputCancel<CrouchAction>>, mut q: Query<&mut FpsCameraIntent, With<FpsCamera>>) {
-    if let Ok(mut i) = q.get_mut(trigger.context) { i.crouch_pressed = false; }
+fn on_crouch_cancel(
+    trigger: On<InputCancel<CrouchAction>>,
+    mut q: Query<&mut FpsCameraIntent, With<FpsCamera>>,
+) {
+    if let Ok(mut i) = q.get_mut(trigger.context) {
+        i.crouch_pressed = false;
+    }
 }
-fn on_crouch_complete(trigger: On<Complete<CrouchAction>>, mut q: Query<&mut FpsCameraIntent, With<FpsCamera>>) {
-    if let Ok(mut i) = q.get_mut(trigger.context) { i.crouch_pressed = false; }
+fn on_crouch_complete(
+    trigger: On<Complete<CrouchAction>>,
+    mut q: Query<&mut FpsCameraIntent, With<FpsCamera>>,
+) {
+    if let Ok(mut i) = q.get_mut(trigger.context) {
+        i.crouch_pressed = false;
+    }
 }
 fn on_aim(trigger: On<Fire<AimAction>>, mut q: Query<&mut FpsCameraIntent, With<FpsCamera>>) {
-    if let Ok(mut i) = q.get_mut(trigger.context) { i.aim_pressed = trigger.value; }
+    if let Ok(mut i) = q.get_mut(trigger.context) {
+        i.aim_pressed = trigger.value;
+    }
 }
-fn on_aim_cancel(trigger: On<InputCancel<AimAction>>, mut q: Query<&mut FpsCameraIntent, With<FpsCamera>>) {
-    if let Ok(mut i) = q.get_mut(trigger.context) { i.aim_pressed = false; }
+fn on_aim_cancel(
+    trigger: On<InputCancel<AimAction>>,
+    mut q: Query<&mut FpsCameraIntent, With<FpsCamera>>,
+) {
+    if let Ok(mut i) = q.get_mut(trigger.context) {
+        i.aim_pressed = false;
+    }
 }
-fn on_aim_complete(trigger: On<Complete<AimAction>>, mut q: Query<&mut FpsCameraIntent, With<FpsCamera>>) {
-    if let Ok(mut i) = q.get_mut(trigger.context) { i.aim_pressed = false; }
+fn on_aim_complete(
+    trigger: On<Complete<AimAction>>,
+    mut q: Query<&mut FpsCameraIntent, With<FpsCamera>>,
+) {
+    if let Ok(mut i) = q.get_mut(trigger.context) {
+        i.aim_pressed = false;
+    }
 }
 fn on_lean(trigger: On<Fire<LeanAction>>, mut q: Query<&mut FpsCameraIntent, With<FpsCamera>>) {
-    if let Ok(mut i) = q.get_mut(trigger.context) { i.lean = trigger.value; }
+    if let Ok(mut i) = q.get_mut(trigger.context) {
+        i.lean = trigger.value;
+    }
 }
-fn on_lean_cancel(trigger: On<InputCancel<LeanAction>>, mut q: Query<&mut FpsCameraIntent, With<FpsCamera>>) {
-    if let Ok(mut i) = q.get_mut(trigger.context) { i.lean = 0.0; }
+fn on_lean_cancel(
+    trigger: On<InputCancel<LeanAction>>,
+    mut q: Query<&mut FpsCameraIntent, With<FpsCamera>>,
+) {
+    if let Ok(mut i) = q.get_mut(trigger.context) {
+        i.lean = 0.0;
+    }
 }
-fn on_lean_complete(trigger: On<Complete<LeanAction>>, mut q: Query<&mut FpsCameraIntent, With<FpsCamera>>) {
-    if let Ok(mut i) = q.get_mut(trigger.context) { i.lean = 0.0; }
+fn on_lean_complete(
+    trigger: On<Complete<LeanAction>>,
+    mut q: Query<&mut FpsCameraIntent, With<FpsCamera>>,
+) {
+    if let Ok(mut i) = q.get_mut(trigger.context) {
+        i.lean = 0.0;
+    }
 }
-fn on_free_look(trigger: On<Fire<FreeLookAction>>, mut q: Query<&mut FpsCameraIntent, With<FpsCamera>>) {
-    if let Ok(mut i) = q.get_mut(trigger.context) { i.free_look = trigger.value; }
+fn on_free_look(
+    trigger: On<Fire<FreeLookAction>>,
+    mut q: Query<&mut FpsCameraIntent, With<FpsCamera>>,
+) {
+    if let Ok(mut i) = q.get_mut(trigger.context) {
+        i.free_look = trigger.value;
+    }
 }
-fn on_free_look_cancel(trigger: On<InputCancel<FreeLookAction>>, mut q: Query<&mut FpsCameraIntent, With<FpsCamera>>) {
-    if let Ok(mut i) = q.get_mut(trigger.context) { i.free_look = false; }
+fn on_free_look_cancel(
+    trigger: On<InputCancel<FreeLookAction>>,
+    mut q: Query<&mut FpsCameraIntent, With<FpsCamera>>,
+) {
+    if let Ok(mut i) = q.get_mut(trigger.context) {
+        i.free_look = false;
+    }
 }
-fn on_free_look_complete(trigger: On<Complete<FreeLookAction>>, mut q: Query<&mut FpsCameraIntent, With<FpsCamera>>) {
-    if let Ok(mut i) = q.get_mut(trigger.context) { i.free_look = false; }
+fn on_free_look_complete(
+    trigger: On<Complete<FreeLookAction>>,
+    mut q: Query<&mut FpsCameraIntent, With<FpsCamera>>,
+) {
+    if let Ok(mut i) = q.get_mut(trigger.context) {
+        i.free_look = false;
+    }
 }

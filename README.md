@@ -59,6 +59,7 @@ For examples and always-on tools, `FpsCameraPlugin::always_on(Update)` is the si
 | `FpsCameraRuntime` | Readable runtime state: logical position, velocity, yaw/pitch, stance alphas, trauma, bob phase, FOV, and composed render output |
 | `FpsCameraExternalMotion` | Optional external locomotion seam for feeding authoritative position, velocity, grounded state, and landing impulses |
 | `FpsCameraExternalEffects` | Optional additive extension seam for custom translation, rotation, or FOV effects |
+| `FpsCameraCollisionFeedback` | Optional collision feedback component for external physics to push the camera away from walls |
 | `CameraEffectLayer` / `CameraEffectStack` | Pure additive layer model for composing cosmetic view motion |
 | Messages | `FootstepEvent`, `LandedEvent`, `CameraShakeRequest`, `CameraRecoilRequest` with optional per-request decay overrides |
 
@@ -69,7 +70,7 @@ For examples and always-on tools, `FpsCameraPlugin::always_on(Update)` is the si
 - `look`: mouse + analog look, clamp, inversion, smoothing
 - `movement`: walk speed, sprint blend, acceleration, air control, gravity, eye height
 - `crouch` / `jump`: stance transitions and designer-facing jump height
-- `head_bob`, `tilt`, `landing`, `recoil`, `shake`: additive presentation layers
+- `head_bob`, `tilt`, `landing`, `recoil`, `shake`, `collision`: additive presentation layers
 - `viewmodel`: first-person weapon or hand lag driven from recent look and locomotion deltas
 - `fov`, `aim`, `lean`, `free_look`: precision and tactical view control
 - `comfort`: global weights for reducing motion without rewriting the pipeline
@@ -85,6 +86,7 @@ The crate exposes comfort as weights instead of hard on/off branches. `ComfortCo
 - Internal locomotion is intentionally flat-ground and generic. It works well for prototypes, debug scenes, and showcase labs.
 - For real character controllers or physics, feed `FpsCameraExternalMotion` every frame and let the camera stack derive presentation from that authoritative state.
 - If another system needs custom view effects, write `FpsCameraExternalEffects` instead of mutating `Transform` directly.
+- For camera collision avoidance, feed `FpsCameraCollisionFeedback` from your physics pipeline. The crate applies configurable push-back in `SyncTransform` without depending on any specific physics engine.
 - `FpsCameraRuntime::viewmodel_translation` and `viewmodel_rotation` give a ready-made seam for weapon, hand, or cockpit meshes that should lag behind camera look.
 - For dual-camera FPS setups, mirror `FpsCameraRuntime::visual_fov` into a view-model camera while keeping the main world camera managed here.
 
@@ -99,7 +101,7 @@ The crate exposes comfort as weights instead of hard on/off branches. `ComfortCo
 | `tactical` | ADS, lean, and free-look oriented tuning | `cargo run -p saddle-camera-fps-camera-example-tactical` |
 | `comfort` | Low-motion accessibility-focused tuning | `cargo run -p saddle-camera-fps-camera-example-comfort` |
 
-Every example includes a live `saddle-pane` control surface so the main parameters can be tuned while the scene is running.
+Every example includes a live `saddle-pane` control surface so the main parameters can be tuned while the scene is running. Press **Tab** to toggle mouse capture and interact with the pane, or **Esc** to release the cursor.
 
 The P0 FPS integration demo also ships with example-level smoke coverage:
 

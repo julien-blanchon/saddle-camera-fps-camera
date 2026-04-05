@@ -120,6 +120,14 @@ pub struct FpsCameraExternalEffects {
     pub weight: f32,
 }
 
+#[derive(Component, Reflect, Debug, Clone, Default)]
+#[reflect(Component)]
+pub struct FpsCameraCollisionFeedback {
+    pub blocked: bool,
+    pub nearest_distance: f32,
+    pub push_normal: Vec3,
+}
+
 #[derive(Component, Debug, Clone)]
 pub(crate) struct FpsCameraInternalState {
     pub initialized: bool,

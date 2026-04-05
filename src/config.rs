@@ -20,6 +20,7 @@ pub struct FpsCameraConfig {
     pub lean: LeanConfig,
     pub free_look: FreeLookConfig,
     pub comfort: ComfortConfig,
+    pub collision: CollisionConfig,
 }
 
 #[derive(Reflect, Debug, Clone)]
@@ -158,9 +159,9 @@ impl Default for HeadBobConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            amplitude: Vec3::new(0.025, 0.045, 0.018),
+            amplitude: Vec3::new(0.018, 0.032, 0.012),
             stride_length: 1.55,
-            sprint_multiplier: 1.35,
+            sprint_multiplier: 1.15,
             crouch_multiplier: 0.65,
             idle_sway_translation: Vec3::new(0.004, 0.006, 0.003),
             idle_sway_rotation: Vec2::new(0.006, 0.004),
@@ -404,6 +405,23 @@ impl Default for ComfortConfig {
             shake_weight: 1.0,
             dynamic_fov_weight: 1.0,
             landing_weight: 1.0,
+        }
+    }
+}
+
+#[derive(Reflect, Debug, Clone)]
+pub struct CollisionConfig {
+    pub enabled: bool,
+    pub push_margin: f32,
+    pub response: DecayConfig,
+}
+
+impl Default for CollisionConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            push_margin: 0.15,
+            response: DecayConfig::new(20.0),
         }
     }
 }

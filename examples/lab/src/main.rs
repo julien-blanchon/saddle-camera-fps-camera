@@ -5,7 +5,7 @@ mod e2e;
 use bevy::{
     input::common_conditions::input_just_pressed,
     prelude::*,
-    remote::{http::RemoteHttpPlugin, RemotePlugin},
+    remote::{RemotePlugin, http::RemoteHttpPlugin},
 };
 #[cfg(feature = "brp")]
 use bevy_brp_extras::BrpExtrasPlugin;

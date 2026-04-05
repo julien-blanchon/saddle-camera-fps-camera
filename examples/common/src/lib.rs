@@ -5,8 +5,8 @@ use bevy::{
 };
 use bevy_enhanced_input::context::InputContextAppExt;
 use bevy_enhanced_input::prelude::{
-    actions, bindings, Action, Axial, Bidirectional, Binding, Bindings, Cancel as InputCancel,
-    Cardinal, Complete, EnhancedInputPlugin, Fire, InputAction, Press, Scale, Start,
+    Action, Axial, Bidirectional, Binding, Bindings, Cancel as InputCancel, Cardinal, Complete,
+    EnhancedInputPlugin, Fire, InputAction, Press, Scale, Start, actions, bindings,
 };
 use saddle_camera_fps_camera::{
     DecayConfig, FpsCamera, FpsCameraConfig, FpsCameraIntent, FpsCameraRuntime, FpsCameraSystems,
@@ -15,6 +15,9 @@ use saddle_pane::prelude::*;
 
 #[derive(Component)]
 pub struct ExampleOverlay;
+
+#[derive(Component)]
+pub struct CursorStateIndicator;
 
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ExampleSystems {
@@ -36,6 +39,10 @@ pub struct FpsCameraPane {
     pub bob_weight: f32,
     #[pane(tab = "Motion", slider, min = 0.0, max = 1.0, step = 0.05)]
     pub shake_weight: f32,
+    #[pane(tab = "Motion", slider, min = 0.0, max = 1.0, step = 0.05)]
+    pub roll_weight: f32,
+    #[pane(tab = "Motion", slider, min = 0.0, max = 1.0, step = 0.05)]
+    pub landing_weight: f32,
     #[pane(tab = "Motion")]
     pub viewmodel_enabled: bool,
     #[pane(tab = "Motion", slider, min = 4.0, max = 30.0, step = 0.5)]
@@ -43,9 +50,17 @@ pub struct FpsCameraPane {
     #[pane(tab = "Runtime", monitor)]
     pub speed: f32,
     #[pane(tab = "Runtime", monitor)]
+    pub sprint_alpha: f32,
+    #[pane(tab = "Runtime", monitor)]
+    pub crouch_alpha: f32,
+    #[pane(tab = "Runtime", monitor)]
     pub visual_fov_degrees: f32,
     #[pane(tab = "Runtime", monitor)]
     pub trauma: f32,
+    #[pane(tab = "Runtime", monitor)]
+    pub grounded: bool,
+    #[pane(tab = "Runtime", monitor)]
+    pub bob_phase: f32,
 }
 
 impl Default for FpsCameraPane {
@@ -58,11 +73,17 @@ impl Default for FpsCameraPane {
             sprint_boost_degrees: config.fov.sprint_boost.to_degrees(),
             bob_weight: config.comfort.bob_weight,
             shake_weight: config.comfort.shake_weight,
+            roll_weight: config.comfort.roll_weight,
+            landing_weight: config.comfort.landing_weight,
             viewmodel_enabled: config.viewmodel.enabled,
             viewmodel_response: config.viewmodel.response.decay_rate,
             speed: 0.0,
+            sprint_alpha: 0.0,
+            crouch_alpha: 0.0,
             visual_fov_degrees: config.fov.base_fov.to_degrees(),
             trauma: 0.0,
+            grounded: true,
+            bob_phase: 0.0,
         }
     }
 }
@@ -144,7 +165,9 @@ impl Plugin for ExampleCameraControlsPlugin {
                 (
                     capture_cursor.run_if(input_just_pressed(MouseButton::Left)),
                     release_cursor.run_if(input_just_pressed(KeyCode::Escape)),
+                    toggle_cursor.run_if(input_just_pressed(KeyCode::Tab)),
                     sync_overlay.in_set(ExampleSystems::Overlay),
+                    sync_cursor_indicator.in_set(ExampleSystems::Overlay),
                 ),
             );
     }
@@ -170,6 +193,13 @@ pub fn add_debug_pane(app: &mut App) {
     app.add_plugins(pane_plugins())
         .register_pane::<FpsCameraPane>()
         .add_systems(Update, sync_pane_to_camera.in_set(ExampleSystems::Overlay));
+}
+
+pub fn is_cursor_captured(cursor: &CursorOptions) -> bool {
+    matches!(
+        cursor.grab_mode,
+        CursorGrabMode::Locked | CursorGrabMode::Confined
+    )
 }
 
 pub fn spawn_reference_world(
@@ -274,6 +304,28 @@ pub fn spawn_reference_world(
         },
         TextColor(Color::WHITE),
     ));
+
+    commands.spawn((
+        Name::new("Cursor State Indicator"),
+        CursorStateIndicator,
+        Node {
+            position_type: PositionType::Absolute,
+            left: Val::Percent(50.0),
+            top: Val::Px(18.0),
+            padding: UiRect::axes(Val::Px(12.0), Val::Px(6.0)),
+            margin: UiRect::left(Val::Px(-100.0)),
+            width: Val::Px(200.0),
+            justify_content: JustifyContent::Center,
+            ..default()
+        },
+        BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.70)),
+        Text::new("[Click to capture mouse]"),
+        TextFont {
+            font_size: 13.0,
+            ..default()
+        },
+        TextColor(Color::srgba(1.0, 1.0, 0.6, 0.9)),
+    ));
 }
 
 pub fn spawn_fps_camera(
@@ -352,6 +404,8 @@ fn sync_pane_to_camera(
         pane.sprint_boost_degrees = config.fov.sprint_boost.to_degrees();
         pane.bob_weight = config.comfort.bob_weight;
         pane.shake_weight = config.comfort.shake_weight;
+        pane.roll_weight = config.comfort.roll_weight;
+        pane.landing_weight = config.comfort.landing_weight;
         pane.viewmodel_enabled = config.viewmodel.enabled;
         pane.viewmodel_response = config.viewmodel.response.decay_rate;
     }
@@ -362,14 +416,20 @@ fn sync_pane_to_camera(
         config.fov.sprint_boost = pane.sprint_boost_degrees.to_radians();
         config.comfort.bob_weight = pane.bob_weight;
         config.comfort.shake_weight = pane.shake_weight;
+        config.comfort.roll_weight = pane.roll_weight;
+        config.comfort.landing_weight = pane.landing_weight;
         config.viewmodel.enabled = pane.viewmodel_enabled;
         config.viewmodel.response = DecayConfig::new(pane.viewmodel_response.max(0.0));
     }
 
     let pane = pane.bypass_change_detection();
     pane.speed = runtime.speed;
+    pane.sprint_alpha = runtime.sprint_alpha;
+    pane.crouch_alpha = runtime.crouch_alpha;
     pane.visual_fov_degrees = runtime.visual_fov.to_degrees();
     pane.trauma = runtime.trauma;
+    pane.grounded = runtime.grounded;
+    pane.bob_phase = runtime.bob_phase;
 }
 
 fn cache_move_axis(
@@ -402,7 +462,11 @@ fn clear_move_axis_on_complete(
 fn cache_mouse_look(
     trigger: On<Fire<MouseLookAction>>,
     mut query: Query<&mut FpsCameraIntent, With<FpsCamera>>,
+    window: Single<&CursorOptions, With<PrimaryWindow>>,
 ) {
+    if !is_cursor_captured(&window) {
+        return;
+    }
     if let Ok(mut intent) = query.get_mut(trigger.context) {
         intent.look_delta += trigger.value;
     }
@@ -589,18 +653,50 @@ fn release_cursor(mut cursor: Single<&mut CursorOptions, With<PrimaryWindow>>) {
     cursor.grab_mode = CursorGrabMode::None;
 }
 
+fn toggle_cursor(mut cursor: Single<&mut CursorOptions, With<PrimaryWindow>>) {
+    if is_cursor_captured(&cursor) {
+        cursor.visible = true;
+        cursor.grab_mode = CursorGrabMode::None;
+    } else {
+        cursor.visible = false;
+        cursor.grab_mode = CursorGrabMode::Locked;
+    }
+}
+
+fn sync_cursor_indicator(
+    cursor: Single<&CursorOptions, With<PrimaryWindow>>,
+    mut indicator: Query<
+        (&mut Text, &mut BackgroundColor, &mut TextColor),
+        With<CursorStateIndicator>,
+    >,
+) {
+    let Ok((mut text, mut bg, mut color)) = indicator.single_mut() else {
+        return;
+    };
+    if is_cursor_captured(&cursor) {
+        text.0 = "Mouse captured [Tab/Esc to release]".into();
+        bg.0 = Color::srgba(0.0, 0.2, 0.0, 0.50);
+        color.0 = Color::srgba(0.7, 1.0, 0.7, 0.7);
+    } else {
+        text.0 = "Mouse free [Click to capture, Tab to toggle]".into();
+        bg.0 = Color::srgba(0.3, 0.15, 0.0, 0.70);
+        color.0 = Color::srgba(1.0, 1.0, 0.6, 0.9);
+    }
+}
+
 fn sync_overlay(
     runtime: Single<(&FpsCameraRuntime, &FpsCameraConfig), With<FpsCamera>>,
     mut overlay: Single<&mut Text, With<ExampleOverlay>>,
 ) {
     let (runtime, config) = runtime.into_inner();
     overlay.0 = format!(
-        "FPS Camera\nWASD move, mouse look, Space jump, Shift sprint, Ctrl crouch\nRMB aim, Q/E lean, Alt free look, Esc release cursor\n\n\
+        "FPS Camera\nWASD move, mouse look, Space jump, Shift sprint, Ctrl crouch\n\
+        RMB aim, Q/E lean, Alt free look, Tab toggle cursor\n\n\
         yaw {:.2}  pitch {:.2}\n\
         speed {:.2}  ratio {:.2}  grounded {}\n\
         crouch {:.2}  sprint {:.2}  aim {:.2}\n\
         trauma {:.2}  bob {:.2}  fov {:.1}\n\
-        comfort bob {:.2} roll {:.2} shake {:.2}",
+        comfort bob {:.2} roll {:.2} shake {:.2} landing {:.2}",
         runtime.yaw,
         runtime.pitch,
         runtime.speed,
@@ -615,5 +711,6 @@ fn sync_overlay(
         config.comfort.bob_weight,
         config.comfort.roll_weight,
         config.comfort.shake_weight,
+        config.comfort.landing_weight,
     );
 }
