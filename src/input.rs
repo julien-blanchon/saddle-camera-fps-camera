@@ -5,7 +5,7 @@ use bevy::prelude::*;
 use crate::{
     FpsCameraConfig, FpsCameraIntent, FpsCameraRuntime,
     components::{FpsCamera, FpsCameraInternalState},
-    springs::decay_vec2,
+    springs::{decay_scalar, decay_vec2},
 };
 
 pub(crate) fn ensure_initialized(
@@ -138,6 +138,14 @@ pub(crate) fn apply_look_intent(
 ) {
     let dt = time.delta_secs();
     for (config, mut intent, mut runtime, mut internal) in &mut query {
+        if config.aim.enabled {
+            let aim_target = if intent.aim_pressed { 1.0 } else { 0.0 };
+            runtime.aim_alpha =
+                decay_scalar(runtime.aim_alpha, aim_target, config.aim.transition, dt);
+        } else {
+            runtime.aim_alpha = 0.0;
+        }
+
         let (delta, smoothing_state) = resolve_look_delta(
             &intent,
             config,

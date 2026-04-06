@@ -1,8 +1,8 @@
 # Saddle Camera FPS Camera
 
-Reusable first-person camera and locomotion-aware view-motion toolkit for Bevy.
+Reusable first-person camera toolkit for Bevy with a minimal orientation core and opt-in motion/effects layers.
 
-The crate keeps gameplay-facing look state separate from cosmetic camera motion. It can run as a simple flat-ground internal controller for examples, prototypes, and debug scenes, or it can ingest externally authored motion from a separate controller while still handling bob, FOV, lean, recoil, shake, viewmodel lag, and comfort scaling.
+`FpsCameraPlugin` is now a pure camera module by default: it handles look intent, optional free-look, external motion ingestion, additive external camera effects, projection sync, and final transform sync. Internal walk/jump/crouch simulation, gait-driven bob, recoil, landing, footsteps, comfort scaling, and viewmodel lag all live behind optional plugins.
 
 ## Quick Start
 
@@ -24,11 +24,10 @@ enum DemoState {
 
 fn main() {
     App::new()
-        .add_plugins((DefaultPlugins, FpsCameraPlugin::new(
-            OnEnter(DemoState::Gameplay),
-            OnExit(DemoState::Gameplay),
-            Update,
-        )))
+        .add_plugins((
+            DefaultPlugins,
+            FpsCameraPlugin::new(OnEnter(DemoState::Gameplay), OnExit(DemoState::Gameplay), Update),
+        ))
         .init_state::<DemoState>()
         .add_systems(Startup, setup)
         .run();
@@ -47,63 +46,65 @@ fn setup(mut commands: Commands) {
 
 For examples and always-on tools, `FpsCameraPlugin::always_on(Update)` is the simple constructor.
 
+If another controller owns authoritative movement, write `FpsCameraExternalMotion` every frame. If you want the old built-in locomotion + effects stack, use `FpsCameraLegacyPlugin` or opt into the granular plugins directly.
+
+## Plugin Layers
+
+| Plugin | Purpose |
+| --- | --- |
+| `FpsCameraPlugin` | Minimal core: look, free-look recentering, external motion sync, external additive effects, projection sync, transform sync |
+| `FpsCameraLocomotionPlugin` | Optional internal flat-ground locomotion with sprint/crouch/jump state |
+| `FpsCameraEffectsPlugin` | Optional bob, landing, recoil, trauma shake, dynamic FOV, lean, viewmodel lag, and footstep/landing messages |
+| `FpsCameraLegacyPlugin` | Convenience wrapper that restores the pre-split full-feature stack |
+
 ## Public API
 
 | Type | Purpose |
 | --- | --- |
-| `FpsCameraPlugin` | Registers the runtime with injectable activate, deactivate, and update schedules |
 | `FpsCameraSystems` | Public ordering hooks: `ReadIntent`, `UpdateLocomotion`, `UpdateCameraState`, `ComposeEffects`, `SyncProjection`, `SyncTransform` |
 | `FpsCamera` | Marker component for camera entities managed by this crate |
-| `FpsCameraConfig` | Top-level tuning surface for look, locomotion-aware feedback, comfort, and effect layers |
-| `FpsCameraIntent` | External intent inbox: move, mouse look, analog look, jump, sprint, crouch, aim, lean, and free-look |
+| `FpsCameraConfig` | Unified tuning surface. Core uses look/aim/free-look/base FOV/collision, optional plugins consume locomotion and presentation fields |
+| `FpsCameraIntent` | External intent inbox. Core consumes look + aim/free-look input; optional plugins may also consume move/jump/sprint/crouch/lean |
 | `FpsCameraRuntime` | Readable runtime state: logical position, velocity, yaw/pitch, stance alphas, trauma, bob phase, FOV, and composed render output |
-| `FpsCameraExternalMotion` | Optional external locomotion seam for feeding authoritative position, velocity, grounded state, and landing impulses |
+| `FpsCameraExternalMotion` | Authoritative movement seam for position, velocity, grounded state, landing impulse, and optional eye-height/stance overrides |
 | `FpsCameraExternalEffects` | Optional additive extension seam for custom translation, rotation, or FOV effects |
 | `FpsCameraCollisionFeedback` | Optional collision feedback component for external physics to push the camera away from walls |
 | `CameraEffectLayer` / `CameraEffectStack` | Pure additive layer model for composing cosmetic view motion |
-| Messages | `FootstepEvent`, `LandedEvent`, `CameraShakeRequest`, `CameraRecoilRequest` with optional per-request decay overrides |
+| Messages | `FootstepEvent`, `LandedEvent`, `CameraShakeRequest`, `CameraRecoilRequest` are registered by `FpsCameraEffectsPlugin` / `FpsCameraLegacyPlugin` |
 
 ## Configuration Overview
 
 `FpsCameraConfig` is intentionally split by concern:
 
-- `look`: mouse + analog look, clamp, inversion, smoothing
-- `movement`: walk speed, sprint blend, acceleration, air control, gravity, eye height
-- `crouch` / `jump`: stance transitions and designer-facing jump height
-- `head_bob`, `tilt`, `landing`, `recoil`, `shake`, `collision`: additive presentation layers
-- `viewmodel`: first-person weapon or hand lag driven from recent look and locomotion deltas
-- `fov`, `aim`, `lean`, `free_look`: precision and tactical view control
-- `comfort`: global weights for reducing motion without rewriting the pipeline
+- Core: `look`, `aim`, `free_look`, `fov.base_fov`, `collision`
+- Optional locomotion: `movement`, `crouch`, `jump`
+- Optional presentation: `head_bob`, `tilt`, `landing`, `recoil`, `shake`, `viewmodel`, `comfort`
+- Shared by optional layers: `fov.speed_boost`, `fov.sprint_boost`, `lean`
 
-The default config targets a grounded exploration baseline. Arena, tactical, horror, and low-motion profiles are all reachable by parameter changes rather than code changes.
-
-## Comfort Notes
-
-The crate exposes comfort as weights instead of hard on/off branches. `ComfortConfig::low_motion()` is a good default for accessibility-sensitive experiences because it substantially reduces bob, roll, shake, landing compression, and dynamic FOV while preserving the underlying API. `ComfortConfig::vr_mode()` pushes those reductions further for camera stacks that need especially conservative motion.
+This keeps the public config flat for legacy/full-feature users while making the default runtime a pure camera-orientation stack.
 
 ## Integration Seams
 
-- Internal locomotion is intentionally flat-ground and generic. It works well for prototypes, debug scenes, and showcase labs.
-- For real character controllers or physics, feed `FpsCameraExternalMotion` every frame and let the camera stack derive presentation from that authoritative state.
+- `FpsCameraPlugin` alone gives you a stable first-person orientation core that can stay fixed at its spawn transform or follow `FpsCameraExternalMotion`.
+- For real character controllers or physics, feed `FpsCameraExternalMotion` every frame and let optional plugins derive presentation from that authoritative state.
 - If another system needs custom view effects, write `FpsCameraExternalEffects` instead of mutating `Transform` directly.
-- For camera collision avoidance, feed `FpsCameraCollisionFeedback` from your physics pipeline. The crate applies configurable push-back in `SyncTransform` without depending on any specific physics engine.
-- `FpsCameraRuntime::viewmodel_translation` and `viewmodel_rotation` give a ready-made seam for weapon, hand, or cockpit meshes that should lag behind camera look.
-- For dual-camera FPS setups, mirror `FpsCameraRuntime::visual_fov` into a view-model camera while keeping the main world camera managed here.
+- For camera collision avoidance, feed `FpsCameraCollisionFeedback` from your physics pipeline. The crate applies push-back in `SyncTransform` without depending on any specific physics engine.
+- `FpsCameraRuntime::viewmodel_translation` and `viewmodel_rotation` are only populated when `FpsCameraEffectsPlugin` (or `FpsCameraLegacyPlugin`) is active.
 
 ## Examples
 
 | Example | Purpose | Run |
 | --- | --- | --- |
-| `basic` | Minimal look + move setup with defaults | `cargo run -p saddle-camera-fps-camera-example-basic` |
-| `external_motion` | Character-controller bridge with support motion, landing feedback, and visible viewmodel sway | `cargo run -p saddle-camera-fps-camera-example-external-motion` |
-| `grounded` | Heavier sprint, crouch, jump, and landing feedback | `cargo run -p saddle-camera-fps-camera-example-grounded` |
-| `effects` | Timed recoil and trauma pulses | `cargo run -p saddle-camera-fps-camera-example-effects` |
-| `tactical` | ADS, lean, and free-look oriented tuning | `cargo run -p saddle-camera-fps-camera-example-tactical` |
-| `comfort` | Low-motion accessibility-focused tuning | `cargo run -p saddle-camera-fps-camera-example-comfort` |
+| `basic` | Legacy convenience wrapper with built-in walk/jump/crouch defaults | `cargo run -p saddle-camera-fps-camera-example-basic` |
+| `external_motion` | Minimal core + optional effects layered on top of an authoritative controller | `cargo run -p saddle-camera-fps-camera-example-external-motion` |
+| `grounded` | Legacy wrapper with heavier sprint, crouch, jump, and landing feedback | `cargo run -p saddle-camera-fps-camera-example-grounded` |
+| `effects` | Legacy wrapper with timed recoil and trauma pulses | `cargo run -p saddle-camera-fps-camera-example-effects` |
+| `tactical` | Legacy wrapper tuned for ADS, lean, and free-look | `cargo run -p saddle-camera-fps-camera-example-tactical` |
+| `comfort` | Legacy wrapper with low-motion accessibility-focused tuning | `cargo run -p saddle-camera-fps-camera-example-comfort` |
 
 Every example includes a live `saddle-pane` control surface so the main parameters can be tuned while the scene is running. Press **Tab** to toggle mouse capture and interact with the pane, or **Esc** to release the cursor.
 
-The P0 FPS integration demo also ships with example-level smoke coverage:
+The P0 external-motion integration demo also ships with example-level smoke coverage:
 
 ```bash
 cargo run -p saddle-camera-fps-camera-example-external-motion --features e2e -- fps_external_motion_smoke

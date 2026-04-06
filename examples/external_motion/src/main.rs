@@ -15,8 +15,9 @@ use bevy_enhanced_input::prelude::{
 };
 use bevy_enhanced_input::preset::WithBundle;
 use saddle_camera_fps_camera::{
-    CameraRecoilRequest, CameraShakeRequest, FpsCamera, FpsCameraConfig, FpsCameraExternalMotion,
-    FpsCameraPlugin, FpsCameraRuntime, FpsCameraSystems, ShakeNoiseProfile,
+    CameraRecoilRequest, CameraShakeRequest, FpsCamera, FpsCameraConfig, FpsCameraEffectsPlugin,
+    FpsCameraExternalMotion, FpsCameraPlugin, FpsCameraRuntime, FpsCameraSystems,
+    ShakeNoiseProfile,
 };
 use saddle_camera_fps_camera_example_common as common;
 use saddle_character_controller::{
@@ -95,6 +96,7 @@ fn main() {
             }),
             PhysicsPlugins::default(),
             FpsCameraPlugin::default(),
+            FpsCameraEffectsPlugin::default(),
             CharacterControllerPlugin::always_on(FixedUpdate),
         ));
     #[cfg(feature = "e2e")]
@@ -449,10 +451,11 @@ fn sync_camera_external_motion(
     let landing_impulse = std::mem::take(&mut pending_landing.0);
 
     camera.enabled = true;
-    camera.position = transform.translation + Vec3::Y * view_height;
+    camera.position = transform.translation;
     camera.velocity = velocity.0;
     camera.grounded = state.ground.is_some();
     camera.landing_impulse = landing_impulse;
+    camera.eye_height = Some(view_height);
     camera.crouch_alpha = Some(if state.crouching { 1.0 } else { 0.0 });
     camera.sprint_alpha = Some(
         (velocity.0.xz().length() / (controller.speed * controller.sprint_speed_scale))

@@ -7,8 +7,9 @@ use bevy::{
 
 use crate::{
     AimConfig, CameraRecoilRequest, CameraShakeRequest, CrouchConfig, DecayConfig, FootstepEvent,
-    FpsCamera, FpsCameraConfig, FpsCameraExternalMotion, FpsCameraIntent, FpsCameraPlugin,
-    FpsCameraRuntime, FpsCameraSystems, LandedEvent, LeanConfig, RecoilConfig,
+    FpsCamera, FpsCameraConfig, FpsCameraEffectsPlugin, FpsCameraExternalMotion, FpsCameraIntent,
+    FpsCameraLegacyPlugin, FpsCameraPlugin, FpsCameraRuntime, FpsCameraSystems, LandedEvent,
+    LeanConfig, RecoilConfig,
 };
 
 #[derive(ScheduleLabel, Debug, Clone, PartialEq, Eq, Hash)]
@@ -123,6 +124,23 @@ fn messages_register_correctly() {
     app.add_plugins(MinimalPlugins)
         .add_plugins(FpsCameraPlugin::default());
 
+    assert!(!app.world().contains_resource::<Messages<FootstepEvent>>());
+    assert!(!app.world().contains_resource::<Messages<LandedEvent>>());
+    assert!(
+        !app.world()
+            .contains_resource::<Messages<CameraShakeRequest>>()
+    );
+    assert!(
+        !app.world()
+            .contains_resource::<Messages<CameraRecoilRequest>>()
+    );
+
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins).add_plugins((
+        FpsCameraPlugin::default(),
+        FpsCameraEffectsPlugin::default(),
+    ));
+
     assert!(app.world().contains_resource::<Messages<FootstepEvent>>());
     assert!(app.world().contains_resource::<Messages<LandedEvent>>());
     assert!(
@@ -162,10 +180,73 @@ fn projection_sync_updates_actual_projection_component() {
 }
 
 #[test]
-fn disabled_crouch_config_keeps_eye_height_and_alpha_at_standing_values() {
+fn core_plugin_applies_external_motion_without_legacy_layers() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins)
         .add_plugins(FpsCameraPlugin::always_on(Update));
+
+    let external_motion = FpsCameraExternalMotion {
+        enabled: true,
+        position: Vec3::new(3.0, 1.0, -4.0),
+        velocity: Vec3::new(1.0, -2.0, 0.5),
+        grounded: false,
+        landing_impulse: 0.4,
+        eye_height: Some(1.75),
+        crouch_alpha: Some(0.35),
+        sprint_alpha: Some(0.6),
+    };
+    spawn_camera(
+        &mut app,
+        FpsCameraConfig::default(),
+        FpsCameraIntent::default(),
+        Some(external_motion),
+    );
+
+    start_runtime(&mut app);
+    app.update();
+
+    let mut query = app.world_mut().query::<&FpsCameraRuntime>();
+    let runtime = query.single(app.world()).expect("expected one camera");
+    assert_eq!(runtime.position, Vec3::new(3.0, 1.0, -4.0));
+    assert_eq!(runtime.eye_height, 1.75);
+    assert_eq!(runtime.crouch_alpha, 0.35);
+    assert_eq!(runtime.sprint_alpha, 0.6);
+    assert!(!runtime.grounded);
+}
+
+#[test]
+fn core_plugin_ignores_internal_motion_intent_by_default() {
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins)
+        .add_plugins(FpsCameraPlugin::always_on(Update));
+
+    spawn_camera(
+        &mut app,
+        FpsCameraConfig::default(),
+        FpsCameraIntent {
+            move_axis: Vec2::Y,
+            sprint_pressed: true,
+            jump_pressed: true,
+            ..default()
+        },
+        None,
+    );
+
+    start_runtime(&mut app);
+    app.update();
+
+    let mut query = app.world_mut().query::<&FpsCameraRuntime>();
+    let runtime = query.single(app.world()).expect("expected one camera");
+    assert!(runtime.position.length() < 0.01);
+    assert_eq!(runtime.speed, 0.0);
+    assert_eq!(runtime.sprint_alpha, 0.0);
+}
+
+#[test]
+fn disabled_crouch_config_keeps_eye_height_and_alpha_at_standing_values() {
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins)
+        .add_plugins(FpsCameraLegacyPlugin::always_on(Update));
 
     let config = FpsCameraConfig {
         crouch: CrouchConfig {
@@ -198,7 +279,7 @@ fn disabled_crouch_config_keeps_eye_height_and_alpha_at_standing_values() {
 fn disabled_external_motion_does_not_override_internal_motion_state() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins)
-        .add_plugins(FpsCameraPlugin::always_on(Update));
+        .add_plugins(FpsCameraLegacyPlugin::always_on(Update));
 
     let external_motion = FpsCameraExternalMotion {
         enabled: false,
@@ -206,6 +287,7 @@ fn disabled_external_motion_does_not_override_internal_motion_state() {
         velocity: Vec3::new(9.0, 0.0, 9.0),
         grounded: false,
         landing_impulse: 1.0,
+        eye_height: None,
         crouch_alpha: Some(1.0),
         sprint_alpha: Some(1.0),
     };
@@ -230,7 +312,7 @@ fn disabled_external_motion_does_not_override_internal_motion_state() {
 fn movement_sprint_transition_is_independent_from_ads_transition() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins)
-        .add_plugins(FpsCameraPlugin::always_on(Update));
+        .add_plugins(FpsCameraLegacyPlugin::always_on(Update));
 
     let config = FpsCameraConfig {
         movement: crate::MovementConfig {
@@ -265,7 +347,7 @@ fn movement_sprint_transition_is_independent_from_ads_transition() {
 fn disabled_aim_and_lean_ignore_input() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins)
-        .add_plugins(FpsCameraPlugin::always_on(Update));
+        .add_plugins(FpsCameraLegacyPlugin::always_on(Update));
 
     let config = FpsCameraConfig {
         aim: AimConfig {
@@ -306,7 +388,7 @@ fn disabled_aim_and_lean_ignore_input() {
 fn disabled_recoil_config_rejects_recoil_requests() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins)
-        .add_plugins(FpsCameraPlugin::always_on(Update));
+        .add_plugins(FpsCameraLegacyPlugin::always_on(Update));
 
     let config = FpsCameraConfig {
         recoil: RecoilConfig {
@@ -340,7 +422,7 @@ fn landed_event_reports_non_zero_impact_speed_after_jump() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins)
         .init_resource::<Landings>()
-        .add_plugins(FpsCameraPlugin::always_on(Update))
+        .add_plugins(FpsCameraLegacyPlugin::always_on(Update))
         .add_systems(
             Update,
             collect_landed_events.after(FpsCameraSystems::UpdateCameraState),

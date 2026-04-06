@@ -1,6 +1,6 @@
 //! # FPS Camera -- Basic Example
 //!
-//! The simplest first-person camera: WASD movement, mouse look, and default config.
+//! The simplest legacy full-feature setup: WASD movement, mouse look, and default config.
 //! This example is fully self-contained so you can copy it into your own project.
 
 use bevy::{
@@ -14,8 +14,8 @@ use bevy_enhanced_input::prelude::{
     EnhancedInputPlugin, Fire, InputAction, Press, Scale, Start, actions, bindings,
 };
 use saddle_camera_fps_camera::{
-    DecayConfig, FpsCamera, FpsCameraConfig, FpsCameraIntent, FpsCameraPlugin, FpsCameraRuntime,
-    FpsCameraSystems,
+    DecayConfig, FpsCamera, FpsCameraConfig, FpsCameraIntent, FpsCameraLegacyPlugin,
+    FpsCameraRuntime, FpsCameraSystems,
 };
 use saddle_pane::prelude::*;
 
@@ -132,7 +132,7 @@ fn main() {
     let mut app = App::new();
     app.add_plugins((
         DefaultPlugins,
-        FpsCameraPlugin::default(),
+        FpsCameraLegacyPlugin::default(),
         EnhancedInputPlugin,
         bevy_flair::FlairPlugin,
         bevy_input_focus::InputDispatchPlugin,
@@ -341,7 +341,7 @@ fn spawn_reference_scene(
         },
         BackgroundColor(Color::srgba(0.03, 0.04, 0.07, 0.80)),
         Text::new(
-            "FPS Camera Basic\nMinimal first-person look + move setup with the default runtime.",
+            "FPS Camera Basic\nLegacy full-feature look + move setup using the convenience wrapper.",
         ),
         TextFont {
             font_size: 15.0,

@@ -106,6 +106,7 @@ pub struct FpsCameraExternalMotion {
     pub velocity: Vec3,
     pub grounded: bool,
     pub landing_impulse: f32,
+    pub eye_height: Option<f32>,
     pub crouch_alpha: Option<f32>,
     pub sprint_alpha: Option<f32>,
 }

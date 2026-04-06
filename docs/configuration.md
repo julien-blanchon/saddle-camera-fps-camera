@@ -2,25 +2,34 @@
 
 All values use Bevy conventions: distances are in world units, rotations are in radians, and FOV values are perspective radians.
 
+`FpsCameraConfig` stays unified for ergonomics, but the runtime is now layered:
+
+- `FpsCameraPlugin` uses the pure camera subset: `look`, `aim`, `free_look`, `fov.base_fov`, `fov.response`, and `collision`
+- `FpsCameraLocomotionPlugin` additionally uses `movement`, `crouch`, and `jump`
+- `FpsCameraEffectsPlugin` additionally uses `head_bob`, `tilt`, `landing`, `recoil`, `viewmodel`, `shake`, `comfort`, `lean`, and the motion-driven parts of `fov`
+- `FpsCameraLegacyPlugin` enables the full combined stack
+
+If you already own movement externally, prefer feeding `FpsCameraExternalMotion` instead of enabling the internal locomotion plugin.
+
 ## `FpsCameraConfig`
 
 | Field | Type | Default | Recommended Range | Effect |
 | --- | --- | --- | --- | --- |
 | `look` | `LookConfig` | default | n/a | Mouse and analog look behavior |
-| `movement` | `MovementConfig` | default | n/a | Baseline locomotion and eye height |
+| `movement` | `MovementConfig` | default | n/a | Optional internal locomotion and default eye-height fallback for external motion |
 | `crouch` | `CrouchConfig` | default | n/a | Crouch stance height, speed, and smoothing |
 | `jump` | `JumpConfig` | default | n/a | Jump apex and fall behavior |
 | `head_bob` | `HeadBobConfig` | default | n/a | Gait-linked bob and idle sway |
-| `fov` | `FovConfig` | default | n/a | Base FOV and motion-driven boosts |
+| `fov` | `FovConfig` | default | n/a | Base FOV in core, plus optional motion-driven boosts in the effects layer |
 | `shake` | `ShakeConfig` | default | n/a | Trauma shake envelope |
 | `tilt` | `TiltConfig` | default | n/a | Strafe roll |
 | `landing` | `LandingImpactConfig` | default | n/a | Landing compression |
 | `recoil` | `RecoilConfig` | default | n/a | Additive recoil recovery |
 | `viewmodel` | `ViewmodelLagConfig` | default | n/a | First-person weapon or hand lag driven by recent motion |
-| `aim` | `AimConfig` | default | n/a | ADS transition and precision scaling |
+| `aim` | `AimConfig` | default | n/a | ADS sensitivity in core, with optional FOV scaling in the effects layer |
 | `lean` | `LeanConfig` | default | n/a | Tactical lean angle and offset |
 | `free_look` | `FreeLookConfig` | default | n/a | Temporary camera-only yaw/pitch offsets |
-| `collision` | `CollisionConfig` | default | n/a | Camera collision push-back from external physics feedback |
+| `collision` | `CollisionConfig` | default | n/a | Core camera collision push-back from external physics feedback |
 | `comfort` | `ComfortConfig` | default | n/a | Global motion reduction weights |
 
 ## `LookConfig`
@@ -46,6 +55,8 @@ Tradeoff: more smoothing softens jitter and controller noise, but it also reduce
 | `exponent` | `f32` | `1.35` | `1.0..2.0` | Higher values give finer center precision and slower initial turn |
 
 ## `MovementConfig`
+
+Used by `FpsCameraLocomotionPlugin` / `FpsCameraLegacyPlugin`. The core plugin still uses `eye_height` as the default fallback when `FpsCameraExternalMotion::eye_height` is not provided.
 
 | Field | Type | Default | Recommended Range | Effect |
 | --- | --- | --- | --- | --- |
@@ -95,6 +106,8 @@ Tradeoff: more smoothing softens jitter and controller noise, but it also reduce
 Tradeoff: stronger bob sells speed and weight, but it raises motion-sickness risk. Lower `comfort.bob_weight` first before rewriting amplitudes for accessibility.
 
 ## `FovConfig`
+
+`base_fov` and `response` are used by the core plugin. `speed_boost` and `sprint_boost` only take effect when `FpsCameraEffectsPlugin` (or `FpsCameraLegacyPlugin`) is active.
 
 | Field | Type | Default | Recommended Range | Effect |
 | --- | --- | --- | --- | --- |
@@ -162,6 +175,8 @@ Use `FpsCameraRuntime::viewmodel_translation` and `viewmodel_rotation` to drive 
 
 ## `AimConfig`
 
+`transition` and `sensitivity_scale` are honored by the core plugin. `fov_multiplier` is only applied by the optional effects layer.
+
 | Field | Type | Default | Recommended Range | Effect |
 | --- | --- | --- | --- | --- |
 | `enabled` | `bool` | `true` | `false/true` | Enables ADS blend |
@@ -180,6 +195,8 @@ Use `FpsCameraRuntime::viewmodel_translation` and `viewmodel_rotation` to drive 
 
 ## `FreeLookConfig`
 
+Free-look remains part of the core orientation stack.
+
 | Field | Type | Default | Recommended Range | Effect |
 | --- | --- | --- | --- | --- |
 | `enabled` | `bool` | `true` | `false/true` | Enables temporary camera-only offsets |
@@ -196,6 +213,17 @@ Use `FpsCameraRuntime::viewmodel_translation` and `viewmodel_rotation` to drive 
 | `response` | `DecayConfig` | `20.0` decay | `8..30` | Controls how quickly collision push-back is applied |
 
 Feed `FpsCameraCollisionFeedback` from an external physics system (raycast, sphere-cast, etc.). When `blocked` is `true`, the camera applies `push_normal * push_margin` to the final render position. The crate intentionally does not depend on any physics engine.
+
+## `FpsCameraExternalMotion`
+
+`FpsCameraExternalMotion` is the preferred seam when another system owns authoritative movement. Its fields mean:
+
+- `position`: logical camera anchor position, typically the player root or controller origin
+- `velocity`: authoritative world velocity used by optional motion-driven effects
+- `grounded`: authoritative grounding state
+- `landing_impulse`: optional normalized landing severity for the effects layer
+- `eye_height`: optional override for the current view height; falls back to `movement.eye_height` / `crouch.eye_height`
+- `crouch_alpha` / `sprint_alpha`: optional stance overrides for optional locomotion-driven presentation
 
 ## `ComfortConfig`
 

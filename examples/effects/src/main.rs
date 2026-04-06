@@ -2,7 +2,7 @@ use saddle_camera_fps_camera_example_common as common;
 
 use bevy::prelude::*;
 use saddle_camera_fps_camera::{
-    CameraRecoilRequest, CameraShakeRequest, FpsCamera, FpsCameraConfig, FpsCameraPlugin,
+    CameraRecoilRequest, CameraShakeRequest, FpsCamera, FpsCameraConfig, FpsCameraLegacyPlugin,
 };
 
 #[derive(Resource)]
@@ -16,7 +16,7 @@ fn main() {
     )));
     app.add_plugins((
         DefaultPlugins,
-        FpsCameraPlugin::default(),
+        FpsCameraLegacyPlugin::default(),
         common::ExampleCameraControlsPlugin,
     ));
     common::add_debug_pane(&mut app);

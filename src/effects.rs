@@ -3,7 +3,8 @@ use std::f32::consts::{PI, TAU};
 use bevy::{ecs::message::MessageReader, prelude::*};
 
 use crate::{
-    CameraEffectLayer, FpsCameraConfig, FpsCameraExternalEffects, FpsCameraRuntime, LandedEvent,
+    CameraEffectLayer, FpsCameraConfig, FpsCameraExternalEffects, FpsCameraIntent,
+    FpsCameraRuntime, LandedEvent,
     components::{FpsCamera, FpsCameraCollisionFeedback, FpsCameraInternalState},
     compose_effect_stack, decay_scalar, decay_vec2, decay_vec3,
     messages::{CameraRecoilRequest, CameraShakeRequest, FootstepEvent},
@@ -11,6 +12,73 @@ use crate::{
 
 fn duration_to_decay_rate(duration_secs: f32) -> Option<f32> {
     (duration_secs > 0.0).then(|| 6.0 / duration_secs.max(0.001))
+}
+
+pub(crate) fn update_core_camera_state(
+    time: Res<Time>,
+    mut query: Query<(&FpsCameraConfig, &FpsCameraIntent, &mut FpsCameraRuntime), With<FpsCamera>>,
+) {
+    let dt = time.delta_secs();
+
+    for (config, intent, mut runtime) in &mut query {
+        if !intent.free_look && runtime.free_look_offset != Vec2::ZERO {
+            runtime.free_look_offset = decay_vec2(
+                runtime.free_look_offset,
+                Vec2::ZERO,
+                config.free_look.recenter,
+                dt,
+            );
+        }
+    }
+}
+
+pub(crate) fn compose_core_camera(
+    time: Res<Time>,
+    mut query: Query<
+        (
+            &FpsCameraConfig,
+            Option<&FpsCameraExternalEffects>,
+            &mut FpsCameraRuntime,
+        ),
+        With<FpsCamera>,
+    >,
+) {
+    let dt = time.delta_secs();
+
+    for (config, external_effects, mut runtime) in &mut query {
+        let mut layers = vec![CameraEffectLayer::weighted(
+            Vec3::ZERO,
+            Vec3::new(runtime.free_look_offset.y, runtime.free_look_offset.x, 0.0),
+            0.0,
+            1.0,
+        )];
+
+        if let Some(external) = external_effects.filter(|effect| effect.enabled) {
+            layers.push(CameraEffectLayer::weighted(
+                external.translation,
+                external.rotation,
+                external.fov_delta,
+                external.weight.max(0.0),
+            ));
+        }
+
+        let stack = compose_effect_stack(&layers);
+        runtime.effect_stack = stack.clone();
+        runtime.head_bob_offset = Vec3::ZERO;
+        runtime.landing_offset = Vec3::ZERO;
+        runtime.shake_offset = Vec3::ZERO;
+        runtime.recoil_offset = Vec2::ZERO;
+        runtime.lean_offset = Vec3::ZERO;
+        runtime.tilt_roll = 0.0;
+        runtime.viewmodel_translation = Vec3::ZERO;
+        runtime.viewmodel_rotation = Vec3::ZERO;
+        runtime.render_translation =
+            runtime.position + Vec3::Y * runtime.eye_height + stack.translation;
+        runtime.render_rotation = Vec3::new(runtime.pitch, runtime.yaw, 0.0) + stack.rotation;
+
+        let fov_target = config.fov.base_fov + stack.fov_delta;
+        runtime.visual_fov = decay_scalar(runtime.visual_fov, fov_target, config.fov.response, dt);
+    }
 }
 
 pub(crate) fn apply_shake_requests(
@@ -192,7 +260,7 @@ fn clamp_vec3_magnitude(value: Vec3, limit: Vec3) -> Vec3 {
     )
 }
 
-fn update_viewmodel_lag(
+pub(crate) fn update_viewmodel_lag(
     config: &FpsCameraConfig,
     runtime: &mut FpsCameraRuntime,
     internal: &mut FpsCameraInternalState,
@@ -256,7 +324,7 @@ pub(crate) fn update_camera_state(
         (
             Entity,
             &FpsCameraConfig,
-            Option<&FpsCameraExternalEffects>,
+            &FpsCameraIntent,
             &mut FpsCameraRuntime,
             &mut FpsCameraInternalState,
         ),
@@ -265,16 +333,7 @@ pub(crate) fn update_camera_state(
 ) {
     let dt = time.delta_secs();
 
-    for (entity, config, _external_effects, mut runtime, mut internal) in &mut query {
-        if runtime.free_look_offset != Vec2::ZERO {
-            runtime.free_look_offset = decay_vec2(
-                runtime.free_look_offset,
-                Vec2::ZERO,
-                config.free_look.recenter,
-                dt,
-            );
-        }
-
+    for (entity, config, intent, mut runtime, mut internal) in &mut query {
         let shake_decay = internal
             .shake_decay_override
             .unwrap_or(config.shake.decay_rate);
@@ -311,7 +370,11 @@ pub(crate) fn update_camera_state(
             decay_scalar(internal.tilt_roll, tilt_target, config.tilt.response, dt);
         runtime.tilt_roll = internal.tilt_roll;
 
-        let lean_target = runtime.lean_alpha;
+        let lean_target = if config.lean.enabled {
+            intent.lean.clamp(-1.0, 1.0)
+        } else {
+            0.0
+        };
         internal.lean_alpha = if config.lean.enabled {
             decay_scalar(internal.lean_alpha, lean_target, config.lean.response, dt)
         } else {

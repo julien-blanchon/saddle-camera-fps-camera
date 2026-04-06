@@ -83,7 +83,75 @@ pub(crate) fn target_speed(config: &FpsCameraConfig, sprint_alpha: f32, crouch_a
     base * (1.0 + crouch_alpha * (config.crouch.speed_multiplier - 1.0))
 }
 
-pub(crate) fn update_locomotion(
+pub(crate) fn resolve_eye_height(
+    config: &FpsCameraConfig,
+    crouch_alpha: f32,
+    override_eye_height: Option<f32>,
+) -> f32 {
+    override_eye_height.unwrap_or_else(|| {
+        if config.crouch.enabled {
+            config
+                .movement
+                .eye_height
+                .lerp(config.crouch.eye_height, crouch_alpha.clamp(0.0, 1.0))
+        } else {
+            config.movement.eye_height
+        }
+    })
+}
+
+fn update_motion_metrics(
+    config: &FpsCameraConfig,
+    runtime: &mut FpsCameraRuntime,
+    previous_vertical_velocity: f32,
+) {
+    runtime.speed = Vec2::new(runtime.velocity.x, runtime.velocity.z).length();
+    runtime.speed_ratio = (runtime.speed
+        / (config.movement.walk_speed * config.movement.sprint_multiplier).max(0.001))
+    .clamp(0.0, 1.25);
+    runtime.fall_speed = if runtime.grounded && previous_vertical_velocity < 0.0 {
+        -previous_vertical_velocity
+    } else {
+        (-runtime.velocity.y).max(0.0)
+    };
+}
+
+pub(crate) fn sync_external_motion(
+    mut query: Query<
+        (
+            &FpsCameraConfig,
+            Option<&FpsCameraExternalMotion>,
+            &mut FpsCameraRuntime,
+        ),
+        With<FpsCamera>,
+    >,
+) {
+    for (config, external_motion, mut runtime) in &mut query {
+        let previous_vertical_velocity = runtime.velocity.y;
+        let Some(external) = external_motion.filter(|motion| motion.enabled) else {
+            runtime.eye_height = resolve_eye_height(config, runtime.crouch_alpha, None);
+            update_motion_metrics(config, &mut runtime, previous_vertical_velocity);
+            continue;
+        };
+
+        if let Some(crouch_alpha) = external.crouch_alpha {
+            runtime.crouch_alpha = crouch_alpha.clamp(0.0, 1.0);
+        }
+        if let Some(sprint_alpha) = external.sprint_alpha {
+            runtime.sprint_alpha = sprint_alpha.clamp(0.0, 1.0);
+        }
+
+        runtime.position = external.position;
+        runtime.velocity = external.velocity;
+        runtime.grounded = external.grounded;
+        runtime.recent_landing_impulse = external.landing_impulse;
+        runtime.eye_height = resolve_eye_height(config, runtime.crouch_alpha, external.eye_height);
+
+        update_motion_metrics(config, &mut runtime, previous_vertical_velocity);
+    }
+}
+
+pub(crate) fn update_internal_locomotion(
     time: Res<Time>,
     mut query: Query<
         (
@@ -91,7 +159,7 @@ pub(crate) fn update_locomotion(
             &mut FpsCameraIntent,
             Option<&FpsCameraExternalMotion>,
             &mut FpsCameraRuntime,
-            &mut FpsCameraInternalState,
+            &FpsCameraInternalState,
         ),
         With<FpsCamera>,
     >,
@@ -99,8 +167,12 @@ pub(crate) fn update_locomotion(
     let dt = time.delta_secs();
 
     for (config, mut intent, external_motion, mut runtime, internal) in &mut query {
+        if external_motion.is_some_and(|motion| motion.enabled) {
+            intent.jump_pressed = false;
+            continue;
+        }
+
         let previous_vertical_velocity = runtime.velocity.y;
-        let external_motion = external_motion.filter(|motion| motion.enabled);
         let sprint_target = if intent.sprint_pressed { 1.0 } else { 0.0 };
         runtime.sprint_alpha = decay_scalar(
             runtime.sprint_alpha,
@@ -109,27 +181,7 @@ pub(crate) fn update_locomotion(
             dt,
         );
 
-        if config.aim.enabled {
-            let aim_target = if intent.aim_pressed { 1.0 } else { 0.0 };
-            runtime.aim_alpha =
-                decay_scalar(runtime.aim_alpha, aim_target, config.aim.transition, dt);
-        } else {
-            runtime.aim_alpha = 0.0;
-        }
-
-        runtime.lean_alpha = if config.lean.enabled {
-            intent.lean.clamp(-1.0, 1.0)
-        } else {
-            0.0
-        };
-
-        let crouch_target = if !config.crouch.enabled {
-            0.0
-        } else if let Some(external) = external_motion {
-            external
-                .crouch_alpha
-                .unwrap_or(if intent.crouch_pressed { 1.0 } else { 0.0 })
-        } else if intent.crouch_pressed {
+        let crouch_target = if config.crouch.enabled && intent.crouch_pressed {
             1.0
         } else {
             0.0
@@ -144,89 +196,58 @@ pub(crate) fn update_locomotion(
             runtime.crouch_alpha = 0.0;
         }
 
-        if let Some(external) = external_motion {
-            runtime.position = external.position;
-            runtime.velocity = external.velocity;
-            runtime.grounded = external.grounded;
-            runtime.recent_landing_impulse = external.landing_impulse;
-            if let Some(sprint_alpha) = external.sprint_alpha {
-                runtime.sprint_alpha = sprint_alpha.clamp(0.0, 1.0);
-            }
+        let speed = target_speed(config, runtime.sprint_alpha, runtime.crouch_alpha);
+        let desired = desired_planar_velocity(intent.move_axis, runtime.yaw, speed);
+        let desired = if runtime.grounded {
+            desired
         } else {
-            let crouch_alpha = if config.crouch.enabled {
-                runtime.crouch_alpha
-            } else {
-                0.0
-            };
-            let speed = target_speed(config, runtime.sprint_alpha, crouch_alpha);
-            let desired = desired_planar_velocity(intent.move_axis, runtime.yaw, speed);
-            let desired = if runtime.grounded {
-                desired
-            } else {
-                desired * config.movement.air_control
-            };
+            desired * config.movement.air_control
+        };
 
-            let mut velocity = integrate_planar_velocity(
-                runtime.velocity,
-                desired,
-                runtime.grounded,
-                config.movement.acceleration,
-                config.movement.deceleration,
-                config.movement.air_acceleration,
-                config.movement.max_air_speed,
-                dt,
-            );
+        let mut velocity = integrate_planar_velocity(
+            runtime.velocity,
+            desired,
+            runtime.grounded,
+            config.movement.acceleration,
+            config.movement.deceleration,
+            config.movement.air_acceleration,
+            config.movement.max_air_speed,
+            dt,
+        );
 
-            let was_grounded = runtime.grounded;
-            if runtime.grounded && intent.jump_pressed && config.jump.enabled {
-                velocity.y = jump_velocity(config.movement.gravity, config.jump.height);
-                runtime.grounded = false;
-            } else if !runtime.grounded {
-                let gravity = config.movement.gravity
-                    * if velocity.y < 0.0 {
-                        config.jump.fall_multiplier
-                    } else {
-                        1.0
-                    };
-                velocity.y = (velocity.y - gravity * dt).max(-config.movement.terminal_velocity);
-            } else {
-                velocity.y = 0.0;
-            }
-
-            runtime.position += velocity * dt;
-            if runtime.position.y <= internal.base_ground_height {
-                runtime.position.y = internal.base_ground_height;
-                runtime.grounded = true;
-                if !was_grounded && velocity.y < -config.jump.landing_velocity_threshold {
-                    runtime.recent_landing_impulse = (-velocity.y
-                        / config.movement.terminal_velocity.max(1.0))
-                    .clamp(0.0, config.landing.max_impulse);
-                }
-                velocity.y = 0.0;
-            } else {
-                runtime.grounded = false;
-            }
-
-            runtime.velocity = velocity;
+        let was_grounded = runtime.grounded;
+        if runtime.grounded && intent.jump_pressed && config.jump.enabled {
+            velocity.y = jump_velocity(config.movement.gravity, config.jump.height);
+            runtime.grounded = false;
+        } else if !runtime.grounded {
+            let gravity = config.movement.gravity
+                * if velocity.y < 0.0 {
+                    config.jump.fall_multiplier
+                } else {
+                    1.0
+                };
+            velocity.y = (velocity.y - gravity * dt).max(-config.movement.terminal_velocity);
+        } else {
+            velocity.y = 0.0;
         }
 
-        runtime.eye_height = if config.crouch.enabled {
-            config.movement.eye_height.lerp(
-                config.crouch.eye_height,
-                runtime.crouch_alpha.clamp(0.0, 1.0),
-            )
+        runtime.position += velocity * dt;
+        if runtime.position.y <= internal.base_ground_height {
+            runtime.position.y = internal.base_ground_height;
+            runtime.grounded = true;
+            if !was_grounded && velocity.y < -config.jump.landing_velocity_threshold {
+                runtime.recent_landing_impulse = (-velocity.y
+                    / config.movement.terminal_velocity.max(1.0))
+                .clamp(0.0, config.landing.max_impulse);
+            }
+            velocity.y = 0.0;
         } else {
-            config.movement.eye_height
-        };
-        runtime.speed = Vec2::new(runtime.velocity.x, runtime.velocity.z).length();
-        runtime.speed_ratio = (runtime.speed
-            / (config.movement.walk_speed * config.movement.sprint_multiplier).max(0.001))
-        .clamp(0.0, 1.25);
-        runtime.fall_speed = if runtime.grounded && previous_vertical_velocity < 0.0 {
-            -previous_vertical_velocity
-        } else {
-            (-runtime.velocity.y).max(0.0)
-        };
+            runtime.grounded = false;
+        }
+
+        runtime.velocity = velocity;
+        runtime.eye_height = resolve_eye_height(config, runtime.crouch_alpha, None);
+        update_motion_metrics(config, &mut runtime, previous_vertical_velocity);
 
         intent.jump_pressed = false;
     }

@@ -76,15 +76,9 @@ impl Default for FpsCameraPlugin {
 
 impl Plugin for FpsCameraPlugin {
     fn build(&self, app: &mut App) {
-        if self.deactivate_schedule == NeverDeactivateSchedule.intern() {
-            app.init_schedule(NeverDeactivateSchedule);
-        }
+        initialize_runtime_schedule(app, self.deactivate_schedule);
 
         app.init_resource::<FpsCameraRuntimeActive>()
-            .add_message::<FootstepEvent>()
-            .add_message::<LandedEvent>()
-            .add_message::<CameraShakeRequest>()
-            .add_message::<CameraRecoilRequest>()
             .register_type::<AimConfig>()
             .register_type::<AnalogLookConfig>()
             .register_type::<CameraEffectLayer>()
@@ -129,17 +123,12 @@ impl Plugin for FpsCameraPlugin {
             .add_systems(
                 self.update_schedule,
                 (
-                    (
-                        input::ensure_initialized,
-                        effects::apply_shake_requests,
-                        effects::apply_recoil_requests,
-                        input::apply_look_intent,
-                    )
+                    (input::ensure_initialized, input::apply_look_intent)
                         .chain()
                         .in_set(FpsCameraSystems::ReadIntent),
-                    movement::update_locomotion.in_set(FpsCameraSystems::UpdateLocomotion),
-                    effects::update_camera_state.in_set(FpsCameraSystems::UpdateCameraState),
-                    effects::compose_effects.in_set(FpsCameraSystems::ComposeEffects),
+                    movement::sync_external_motion.in_set(FpsCameraSystems::UpdateLocomotion),
+                    effects::update_core_camera_state.in_set(FpsCameraSystems::UpdateCameraState),
+                    effects::compose_core_camera.in_set(FpsCameraSystems::ComposeEffects),
                     effects::sync_projection.in_set(FpsCameraSystems::SyncProjection),
                 )
                     .run_if(runtime_is_active),
@@ -152,6 +141,135 @@ impl Plugin for FpsCameraPlugin {
                     .before(TransformSystems::Propagate)
                     .run_if(runtime_is_active),
             );
+    }
+}
+
+pub struct FpsCameraLocomotionPlugin {
+    pub update_schedule: Interned<dyn ScheduleLabel>,
+}
+
+impl FpsCameraLocomotionPlugin {
+    pub fn new(update_schedule: impl ScheduleLabel) -> Self {
+        Self {
+            update_schedule: update_schedule.intern(),
+        }
+    }
+}
+
+impl Default for FpsCameraLocomotionPlugin {
+    fn default() -> Self {
+        Self::new(Update)
+    }
+}
+
+impl Plugin for FpsCameraLocomotionPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_systems(
+            self.update_schedule,
+            movement::update_internal_locomotion
+                .after(movement::sync_external_motion)
+                .in_set(FpsCameraSystems::UpdateLocomotion)
+                .run_if(runtime_is_active),
+        );
+    }
+}
+
+pub struct FpsCameraEffectsPlugin {
+    pub update_schedule: Interned<dyn ScheduleLabel>,
+}
+
+impl FpsCameraEffectsPlugin {
+    pub fn new(update_schedule: impl ScheduleLabel) -> Self {
+        Self {
+            update_schedule: update_schedule.intern(),
+        }
+    }
+}
+
+impl Default for FpsCameraEffectsPlugin {
+    fn default() -> Self {
+        Self::new(Update)
+    }
+}
+
+impl Plugin for FpsCameraEffectsPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_message::<FootstepEvent>()
+            .add_message::<LandedEvent>()
+            .add_message::<CameraShakeRequest>()
+            .add_message::<CameraRecoilRequest>()
+            .add_systems(
+                self.update_schedule,
+                (
+                    (
+                        effects::apply_shake_requests,
+                        effects::apply_recoil_requests,
+                    )
+                        .chain()
+                        .in_set(FpsCameraSystems::ReadIntent),
+                    effects::update_camera_state
+                        .after(effects::update_core_camera_state)
+                        .in_set(FpsCameraSystems::UpdateCameraState),
+                    effects::compose_effects
+                        .after(effects::compose_core_camera)
+                        .in_set(FpsCameraSystems::ComposeEffects),
+                )
+                    .run_if(runtime_is_active),
+            );
+    }
+}
+
+pub struct FpsCameraLegacyPlugin {
+    pub activate_schedule: Interned<dyn ScheduleLabel>,
+    pub deactivate_schedule: Interned<dyn ScheduleLabel>,
+    pub update_schedule: Interned<dyn ScheduleLabel>,
+}
+
+impl FpsCameraLegacyPlugin {
+    pub fn new(
+        activate_schedule: impl ScheduleLabel,
+        deactivate_schedule: impl ScheduleLabel,
+        update_schedule: impl ScheduleLabel,
+    ) -> Self {
+        Self {
+            activate_schedule: activate_schedule.intern(),
+            deactivate_schedule: deactivate_schedule.intern(),
+            update_schedule: update_schedule.intern(),
+        }
+    }
+
+    pub fn always_on(update_schedule: impl ScheduleLabel) -> Self {
+        Self::new(PostStartup, NeverDeactivateSchedule, update_schedule)
+    }
+}
+
+impl Default for FpsCameraLegacyPlugin {
+    fn default() -> Self {
+        Self::always_on(Update)
+    }
+}
+
+impl Plugin for FpsCameraLegacyPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_plugins((
+            FpsCameraPlugin {
+                activate_schedule: self.activate_schedule,
+                deactivate_schedule: self.deactivate_schedule,
+                update_schedule: self.update_schedule,
+            },
+            FpsCameraLocomotionPlugin {
+                update_schedule: self.update_schedule,
+            },
+            FpsCameraEffectsPlugin {
+                update_schedule: self.update_schedule,
+            },
+        ));
+    }
+}
+
+fn initialize_runtime_schedule(app: &mut App, deactivate_schedule: Interned<dyn ScheduleLabel>) {
+    if deactivate_schedule == NeverDeactivateSchedule.intern() {
+        app.init_schedule(NeverDeactivateSchedule);
     }
 }
 

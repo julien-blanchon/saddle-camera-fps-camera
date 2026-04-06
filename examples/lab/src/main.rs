@@ -10,7 +10,7 @@ use bevy::{
 #[cfg(feature = "brp")]
 use bevy_brp_extras::BrpExtrasPlugin;
 use saddle_camera_fps_camera::{
-    CameraRecoilRequest, CameraShakeRequest, FpsCamera, FpsCameraConfig, FpsCameraPlugin,
+    CameraRecoilRequest, CameraShakeRequest, FpsCamera, FpsCameraConfig, FpsCameraLegacyPlugin,
     HeadBobConfig,
 };
 
@@ -32,7 +32,7 @@ fn main() {
             }),
             ..default()
         }),
-        FpsCameraPlugin::default(),
+        FpsCameraLegacyPlugin::default(),
         common::ExampleCameraControlsPlugin,
         RemotePlugin::default(),
     ));

@@ -14,8 +14,8 @@ use bevy_enhanced_input::prelude::{
     EnhancedInputPlugin, Fire, InputAction, Press, Scale, Start, actions, bindings,
 };
 use saddle_camera_fps_camera::{
-    ComfortConfig, FpsCamera, FpsCameraConfig, FpsCameraIntent, FpsCameraPlugin, FpsCameraRuntime,
-    FpsCameraSystems, HeadBobConfig, TiltConfig,
+    ComfortConfig, FpsCamera, FpsCameraConfig, FpsCameraIntent, FpsCameraLegacyPlugin,
+    FpsCameraRuntime, FpsCameraSystems, HeadBobConfig, TiltConfig,
 };
 use saddle_pane::prelude::*;
 
@@ -113,7 +113,7 @@ fn main() {
     let mut app = App::new();
     app.add_plugins((
         DefaultPlugins,
-        FpsCameraPlugin::default(),
+        FpsCameraLegacyPlugin::default(),
         EnhancedInputPlugin,
         bevy_flair::FlairPlugin,
         bevy_input_focus::InputDispatchPlugin,
