@@ -75,6 +75,8 @@ fn scenario_by_name(name: &str) -> Option<Scenario> {
         "fps_camera_effects" => Some(build_effects()),
         "fps_camera_comfort" => Some(build_comfort()),
         "fps_camera_viewmodel" => Some(build_viewmodel()),
+        "fps_camera_aim" => Some(build_aim()),
+        "fps_camera_lean" => Some(build_lean()),
         _ => None,
     }
 }
@@ -87,6 +89,8 @@ fn list_scenarios() -> Vec<&'static str> {
         "fps_camera_effects",
         "fps_camera_comfort",
         "fps_camera_viewmodel",
+        "fps_camera_aim",
+        "fps_camera_lean",
     ]
 }
 
@@ -352,4 +356,109 @@ fn build_viewmodel() -> Scenario {
         .then(Action::Screenshot("fps_camera_viewmodel".into()))
         .then(Action::WaitFrames(1))
         .build()
+}
+
+fn build_aim() -> Scenario {
+    Scenario::builder("fps_camera_aim")
+        .description(
+            "Inject aim intent and verify that aim_alpha rises toward 1 and the visual FOV \
+             narrows compared to the pre-aim baseline. Then release aim and confirm recovery.",
+        )
+        .then(Action::WaitFrames(60))
+        // Capture baseline FOV before aiming.
+        .then(Action::Custom(Box::new(|world: &mut World| {
+            let fov_before = runtime(world).map(|r| r.visual_fov).unwrap_or(0.0);
+            world.insert_resource(AimBaseline { fov_before });
+        })))
+        .then(Action::Screenshot("fps_camera_aim_before".into()))
+        .then(Action::WaitFrames(1))
+        // Press aim.
+        .then(Action::Custom(Box::new(|world: &mut World| {
+            if let Some(mut intent) = intent_mut(world) {
+                intent.aim_pressed = true;
+            }
+        })))
+        .then(Action::WaitFrames(25))
+        .then(assertions::component_satisfies::<FpsCameraRuntime>(
+            "aim_alpha rises toward 1",
+            |runtime| runtime.aim_alpha > 0.5,
+        ))
+        .then(assertions::custom(
+            "aiming narrows the visual FOV",
+            |world| {
+                let baseline = world.resource::<AimBaseline>();
+                runtime(world).is_some_and(|r| r.visual_fov < baseline.fov_before - 0.01)
+            },
+        ))
+        .then(assertions::log_summary("fps_camera_aim active summary"))
+        .then(Action::Screenshot("fps_camera_aim_active".into()))
+        .then(Action::WaitFrames(1))
+        // Release aim and confirm recovery.
+        .then(Action::Custom(Box::new(|world: &mut World| {
+            if let Some(mut intent) = intent_mut(world) {
+                intent.aim_pressed = false;
+            }
+        })))
+        .then(Action::WaitFrames(30))
+        .then(assertions::component_satisfies::<FpsCameraRuntime>(
+            "aim_alpha decays after release",
+            |runtime| runtime.aim_alpha < 0.2,
+        ))
+        .then(assertions::log_summary("fps_camera_aim summary"))
+        .then(inspect::dump_component_json::<FpsCameraRuntime>("fps_camera_aim_runtime"))
+        .then(Action::Screenshot("fps_camera_aim_recovered".into()))
+        .then(Action::WaitFrames(1))
+        .build()
+}
+
+fn build_lean() -> Scenario {
+    Scenario::builder("fps_camera_lean")
+        .description(
+            "Inject a positive lean value, verify lean_alpha and lean_offset grow, then \
+             zero the intent and confirm the lean decays back to neutral.",
+        )
+        .then(Action::WaitFrames(60))
+        .then(Action::Screenshot("fps_camera_lean_before".into()))
+        .then(Action::WaitFrames(1))
+        // Lean right (+1.0).
+        .then(Action::Custom(Box::new(|world: &mut World| {
+            if let Some(mut intent) = intent_mut(world) {
+                intent.lean = 1.0;
+            }
+        })))
+        .then(Action::WaitFrames(25))
+        .then(assertions::component_satisfies::<FpsCameraRuntime>(
+            "lean_alpha grows in the lean direction",
+            |runtime| runtime.lean_alpha > 0.3,
+        ))
+        .then(assertions::component_satisfies::<FpsCameraRuntime>(
+            "lean_offset has a non-zero lateral component",
+            |runtime| runtime.lean_offset.length() > 0.005,
+        ))
+        .then(assertions::log_summary("fps_camera_lean active summary"))
+        .then(Action::Screenshot("fps_camera_lean_active".into()))
+        .then(Action::WaitFrames(1))
+        // Release lean.
+        .then(Action::Custom(Box::new(|world: &mut World| {
+            if let Some(mut intent) = intent_mut(world) {
+                intent.lean = 0.0;
+            }
+        })))
+        .then(Action::WaitFrames(30))
+        .then(assertions::component_satisfies::<FpsCameraRuntime>(
+            "lean decays back toward neutral",
+            |runtime| runtime.lean_alpha < 0.2,
+        ))
+        .then(assertions::log_summary("fps_camera_lean summary"))
+        .then(inspect::dump_component_json::<FpsCameraRuntime>("fps_camera_lean_runtime"))
+        .then(Action::Screenshot("fps_camera_lean_recovered".into()))
+        .then(Action::WaitFrames(1))
+        .build()
+}
+
+// ── checkpoint resources used across scenarios ────────────────────────────────
+
+#[derive(Resource, Clone, Copy)]
+struct AimBaseline {
+    fov_before: f32,
 }
