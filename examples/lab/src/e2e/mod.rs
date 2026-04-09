@@ -115,6 +115,67 @@ fn intent_mut(world: &mut World) -> Option<Mut<'_, FpsCameraIntent>> {
     world.get_mut::<FpsCameraIntent>(entity)
 }
 
+fn with_intent(world: &mut World, update: impl FnOnce(&mut FpsCameraIntent)) {
+    if let Some(mut intent) = intent_mut(world) {
+        update(&mut intent);
+    }
+}
+
+fn set_move_axis(world: &mut World, axis: Vec2) {
+    with_intent(world, |intent| intent.move_axis = axis);
+}
+
+fn set_look_delta(world: &mut World, delta: Vec2) {
+    with_intent(world, |intent| intent.look_delta = delta);
+}
+
+fn set_sprint_pressed(world: &mut World, pressed: bool) {
+    with_intent(world, |intent| intent.sprint_pressed = pressed);
+}
+
+fn set_crouch_pressed(world: &mut World, pressed: bool) {
+    with_intent(world, |intent| intent.crouch_pressed = pressed);
+}
+
+fn set_jump_pressed(world: &mut World, pressed: bool) {
+    with_intent(world, |intent| intent.jump_pressed = pressed);
+}
+
+fn set_aim_pressed(world: &mut World, pressed: bool) {
+    with_intent(world, |intent| intent.aim_pressed = pressed);
+}
+
+fn set_lean(world: &mut World, lean: f32) {
+    with_intent(world, |intent| intent.lean = lean);
+}
+
+fn send_camera_shake(world: &mut World, trauma: f32) {
+    let Some(entity) = camera_entity(world) else {
+        return;
+    };
+    world
+        .resource_mut::<Messages<CameraShakeRequest>>()
+        .write(CameraShakeRequest {
+            entity,
+            trauma,
+            duration_override: None,
+        });
+}
+
+fn send_camera_recoil(world: &mut World, pitch_degrees: f32, yaw_degrees: f32) {
+    let Some(entity) = camera_entity(world) else {
+        return;
+    };
+    world
+        .resource_mut::<Messages<CameraRecoilRequest>>()
+        .write(CameraRecoilRequest {
+            entity,
+            pitch: pitch_degrees.to_radians(),
+            yaw: yaw_degrees.to_radians(),
+            duration_override: None,
+        });
+}
+
 fn build_smoke() -> Scenario {
     Scenario::builder("fps_camera_smoke")
         .description(
@@ -142,9 +203,7 @@ fn build_look() -> Scenario {
         .then(Action::Screenshot("fps_camera_look_before".into()))
         .then(Action::WaitFrames(1))
         .then(Action::Custom(Box::new(|world: &mut World| {
-            if let Some(mut intent) = intent_mut(world) {
-                intent.look_delta = Vec2::new(80.0, -40.0);
-            }
+            set_look_delta(world, Vec2::new(80.0, -40.0));
         })))
         .then(Action::WaitFrames(2))
         .then(assertions::component_satisfies::<FpsCameraRuntime>(
@@ -164,9 +223,7 @@ fn build_movement() -> Scenario {
         )
         .then(Action::WaitFrames(60))
         .then(Action::Custom(Box::new(|world: &mut World| {
-            if let Some(mut intent) = intent_mut(world) {
-                intent.move_axis = Vec2::Y;
-            }
+            set_move_axis(world, Vec2::Y);
         })))
         .then(Action::WaitFrames(25))
         .then(assertions::component_satisfies::<FpsCameraRuntime>(
@@ -174,9 +231,7 @@ fn build_movement() -> Scenario {
             |runtime| runtime.speed > 0.5 && runtime.position.z < 7.7,
         ))
         .then(Action::Custom(Box::new(|world: &mut World| {
-            if let Some(mut intent) = intent_mut(world) {
-                intent.move_axis = Vec2::X;
-            }
+            set_move_axis(world, Vec2::X);
         })))
         .then(Action::WaitFrames(20))
         .then(assertions::component_satisfies::<FpsCameraRuntime>(
@@ -184,10 +239,8 @@ fn build_movement() -> Scenario {
             |runtime| runtime.speed > 0.5 && runtime.position.x > 0.4,
         ))
         .then(Action::Custom(Box::new(|world: &mut World| {
-            if let Some(mut intent) = intent_mut(world) {
-                intent.move_axis = Vec2::Y;
-                intent.sprint_pressed = true;
-            }
+            set_move_axis(world, Vec2::Y);
+            set_sprint_pressed(world, true);
         })))
         .then(Action::WaitFrames(25))
         .then(assertions::component_satisfies::<FpsCameraRuntime>(
@@ -195,10 +248,8 @@ fn build_movement() -> Scenario {
             |runtime| runtime.sprint_alpha > 0.5 && runtime.speed_ratio > 0.7,
         ))
         .then(Action::Custom(Box::new(|world: &mut World| {
-            if let Some(mut intent) = intent_mut(world) {
-                intent.sprint_pressed = false;
-                intent.crouch_pressed = true;
-            }
+            set_sprint_pressed(world, false);
+            set_crouch_pressed(world, true);
         })))
         .then(Action::WaitFrames(25))
         .then(assertions::component_satisfies::<FpsCameraRuntime>(
@@ -206,11 +257,9 @@ fn build_movement() -> Scenario {
             |runtime| runtime.crouch_alpha > 0.5 && runtime.eye_height < 1.4,
         ))
         .then(Action::Custom(Box::new(|world: &mut World| {
-            if let Some(mut intent) = intent_mut(world) {
-                intent.crouch_pressed = false;
-                intent.move_axis = Vec2::ZERO;
-                intent.jump_pressed = true;
-            }
+            set_crouch_pressed(world, false);
+            set_move_axis(world, Vec2::ZERO);
+            set_jump_pressed(world, true);
         })))
         .then(Action::WaitFrames(10))
         .then(assertions::component_satisfies::<FpsCameraRuntime>(
@@ -235,24 +284,8 @@ fn build_effects() -> Scenario {
         )
         .then(Action::WaitFrames(60))
         .then(Action::Custom(Box::new(|world: &mut World| {
-            let Some(entity) = camera_entity(world) else {
-                return;
-            };
-            world
-                .resource_mut::<Messages<CameraShakeRequest>>()
-                .write(CameraShakeRequest {
-                    entity,
-                    trauma: 0.75,
-                    duration_override: None,
-                });
-            world
-                .resource_mut::<Messages<CameraRecoilRequest>>()
-                .write(CameraRecoilRequest {
-                    entity,
-                    pitch: 8.0_f32.to_radians(),
-                    yaw: 2.0_f32.to_radians(),
-                    duration_override: None,
-                });
+            send_camera_shake(world, 0.75);
+            send_camera_recoil(world, 8.0, 2.0);
         })))
         .then(Action::WaitFrames(2))
         .then(assertions::component_satisfies::<FpsCameraRuntime>(
@@ -279,16 +312,7 @@ fn build_comfort() -> Scenario {
         )
         .then(Action::WaitFrames(60))
         .then(Action::Custom(Box::new(|world: &mut World| {
-            let Some(entity) = camera_entity(world) else {
-                return;
-            };
-            world
-                .resource_mut::<Messages<CameraShakeRequest>>()
-                .write(CameraShakeRequest {
-                    entity,
-                    trauma: 0.8,
-                    duration_override: None,
-                });
+            send_camera_shake(world, 0.8);
         })))
         .then(Action::WaitFrames(2))
         .then(Action::Custom(Box::new(|world: &mut World| {
@@ -307,13 +331,7 @@ fn build_comfort() -> Scenario {
             if let Some(mut config) = config_mut(world) {
                 config.comfort = ComfortConfig::low_motion();
             }
-            world
-                .resource_mut::<Messages<CameraShakeRequest>>()
-                .write(CameraShakeRequest {
-                    entity,
-                    trauma: 0.8,
-                    duration_override: None,
-                });
+            send_camera_shake(world, 0.8);
         })))
         .then(Action::WaitFrames(2))
         .then(assertions::custom(
@@ -340,9 +358,7 @@ fn build_viewmodel() -> Scenario {
         )
         .then(Action::WaitFrames(60))
         .then(Action::Custom(Box::new(|world: &mut World| {
-            if let Some(mut intent) = intent_mut(world) {
-                intent.look_delta = Vec2::new(120.0, -36.0);
-            }
+            set_look_delta(world, Vec2::new(120.0, -36.0));
         })))
         .then(Action::WaitFrames(2))
         .then(assertions::component_satisfies::<FpsCameraRuntime>(
@@ -374,9 +390,7 @@ fn build_aim() -> Scenario {
         .then(Action::WaitFrames(1))
         // Press aim.
         .then(Action::Custom(Box::new(|world: &mut World| {
-            if let Some(mut intent) = intent_mut(world) {
-                intent.aim_pressed = true;
-            }
+            set_aim_pressed(world, true);
         })))
         .then(Action::WaitFrames(25))
         .then(assertions::component_satisfies::<FpsCameraRuntime>(
@@ -395,9 +409,7 @@ fn build_aim() -> Scenario {
         .then(Action::WaitFrames(1))
         // Release aim and confirm recovery.
         .then(Action::Custom(Box::new(|world: &mut World| {
-            if let Some(mut intent) = intent_mut(world) {
-                intent.aim_pressed = false;
-            }
+            set_aim_pressed(world, false);
         })))
         .then(Action::WaitFrames(30))
         .then(assertions::component_satisfies::<FpsCameraRuntime>(
@@ -422,9 +434,7 @@ fn build_lean() -> Scenario {
         .then(Action::WaitFrames(1))
         // Lean right (+1.0).
         .then(Action::Custom(Box::new(|world: &mut World| {
-            if let Some(mut intent) = intent_mut(world) {
-                intent.lean = 1.0;
-            }
+            set_lean(world, 1.0);
         })))
         .then(Action::WaitFrames(25))
         .then(assertions::component_satisfies::<FpsCameraRuntime>(
@@ -440,9 +450,7 @@ fn build_lean() -> Scenario {
         .then(Action::WaitFrames(1))
         // Release lean.
         .then(Action::Custom(Box::new(|world: &mut World| {
-            if let Some(mut intent) = intent_mut(world) {
-                intent.lean = 0.0;
-            }
+            set_lean(world, 0.0);
         })))
         .then(Action::WaitFrames(30))
         .then(assertions::component_satisfies::<FpsCameraRuntime>(
